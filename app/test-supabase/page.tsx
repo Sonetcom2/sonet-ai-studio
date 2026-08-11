@@ -1,9 +1,11 @@
 "use client";
 
-import { supabase } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 
 export default function TestSupabase() {
   async function testConnection() {
+    const supabase = createClient();
+
     const { data, error } = await supabase.auth.getSession();
 
     console.log("DATA:", data);
