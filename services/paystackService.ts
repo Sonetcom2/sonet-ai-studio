@@ -1,5 +1,3 @@
-import PaystackPop from "@paystack/inline-js";
-
 type InitializePaymentProps = {
   email: string;
   amount: number;
@@ -7,12 +5,18 @@ type InitializePaymentProps = {
   onSuccess: (reference: string) => void;
 };
 
-export function initializePayment({
+export async function initializePayment({
   email,
   amount,
   reference,
   onSuccess,
 }: InitializePaymentProps) {
+  if (typeof window === "undefined") {
+    throw new Error("Payment can only be initialized in the browser.");
+  }
+
+  const { default: PaystackPop } = await import("@paystack/inline-js");
+
   const popup = new PaystackPop();
 
   popup.newTransaction({

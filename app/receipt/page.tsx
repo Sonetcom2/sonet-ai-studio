@@ -1,7 +1,7 @@
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 
 type Receipt = {
   plan: string;
@@ -11,22 +11,24 @@ type Receipt = {
   created_at: string;
 };
 
-export default function ReceiptPage() {
+function ReceiptContent() {
   const params = useSearchParams();
 
   const reference = params.get("reference");
 
   const [receipt, setReceipt] = useState<Receipt | null>(null);
-
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadReceipt() {
-      if (!reference) return;
+      if (!reference) {
+        setLoading(false);
+        return;
+      }
 
       try {
         const response = await fetch(
-          `/api/receipt?reference=${reference}`
+          `/api/receipt?reference=${encodeURIComponent(reference)}`
         );
 
         const data = await response.json();
@@ -60,9 +62,7 @@ export default function ReceiptPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-black text-white p-8">
-
       <div className="max-w-2xl mx-auto rounded-3xl bg-slate-900 border border-slate-700 p-10 shadow-2xl">
-
         <h1 className="text-5xl font-black text-center">
           🧾 Receipt
         </h1>
@@ -72,7 +72,6 @@ export default function ReceiptPage() {
         </p>
 
         <div className="mt-10 space-y-5">
-
           <div className="flex justify-between">
             <span>Reference</span>
             <span>{receipt.reference}</span>
@@ -102,12 +101,9 @@ export default function ReceiptPage() {
             <span>Date</span>
 
             <span>
-              {new Date(
-                receipt.created_at
-              ).toLocaleString()}
+              {new Date(receipt.created_at).toLocaleString()}
             </span>
           </div>
-
         </div>
 
         <button
@@ -116,9 +112,23 @@ export default function ReceiptPage() {
         >
           🖨 Print Receipt
         </button>
-
       </div>
-
     </main>
+  );
+}
+
+function ReceiptLoading() {
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+      Loading Receipt...
+    </main>
+  );
+}
+
+export default function ReceiptPage() {
+  return (
+    <Suspense fallback={<ReceiptLoading />}>
+      <ReceiptContent />
+    </Suspense>
   );
 }

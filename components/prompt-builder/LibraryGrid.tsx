@@ -47,9 +47,10 @@ export default function LibraryGrid() {
     }
   }
 
-  function previewImage(image: ImageItem) {
-    setSelectedImage(image);
-  }
+ function previewImage(image: ImageItem) {
+  console.log("PREVIEW CLICKED:", image.image_url);
+  setSelectedImage(image);
+}
 
   async function downloadImage(image: ImageItem) {
     try {

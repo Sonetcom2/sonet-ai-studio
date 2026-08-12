@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { generateImage } from "@/services/imageService";
-import {
-  getUserCredits,
-  deductCredits,
-  IMAGE_GENERATION_COST,
-} from "@/services/creditService";
 
-export async function POST(req: Request) {
+export async function DELETE(req: Request) {
   try {
     const supabase = await createClient();
 
-    // Get logged-in user
+    // Get the currently logged-in user
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -29,20 +23,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Read request body
-    const {
-      prompt,
-      model = "gpt-image-1",
-      quality = "high",
-      style = "auto",
-      aspectRatio = "1:1",
-    } = await req.json();
+    // Read image ID from request
+    const body = await req.json();
+    const imageId = body?.id;
 
-    if (!prompt || !prompt.trim()) {
+    if (!imageId) {
       return NextResponse.json(
         {
           success: false,
-          error: "Prompt is required.",
+          error: "Image ID is required.",
         },
         {
           status: 400,
@@ -50,139 +39,107 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get current credits
-    const { credits } = await getUserCredits(user.id);
-
-    // Credit check
-    if (credits < IMAGE_GENERATION_COST) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "You don't have enough credits to generate an image.",
-          creditsRemaining: credits,
-          creditsRequired: IMAGE_GENERATION_COST,
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // Deduct credits
-    let creditsRemaining: number;
-
-    try {
-      creditsRemaining = await deductCredits(
-        user.id,
-        IMAGE_GENERATION_COST
-      );
-    } catch (error: any) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: error?.message || "Unable to deduct credits.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    console.log("Generating AI image...");
-
-    // Generate image using OpenAI
-    const image = await generateImage({
-      prompt,
-      model,
-      quality,
-      style,
-      aspectRatio,
-    });
-
-    // Convert Base64 Data URL to Buffer
-    const base64 = image.split(",")[1];
-
-    if (!base64) {
-      throw new Error("Invalid image data returned from AI service.");
-    }
-
-    const buffer = Buffer.from(base64, "base64");
-
-    const fileName = `${Date.now()}.png`;
-
-    const filePath = `${user.id}/${fileName}`;
-
-    // Upload to Supabase Storage
-    const { error: uploadError } =
-      await supabaseAdmin.storage
-        .from("generated-images")
-        .upload(filePath, buffer, {
-          contentType: "image/png",
-          upsert: false,
-        });
-
-    // Rollback credits if upload fails
-    if (uploadError) {
+    // Find the image and make sure it belongs to this user
+    const { data: image, error: imageFetchError } =
       await supabaseAdmin
-        .from("profiles")
-        .update({
-          credits: credits + IMAGE_GENERATION_COST,
-        })
-        .eq("id", user.id);
+        .from("images")
+        .select("id, user_id, image_url")
+        .eq("id", imageId)
+        .eq("user_id", user.id)
+        .single();
 
-      throw uploadError;
+    if (imageFetchError || !image) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Image not found or you are not authorised to delete it.",
+        },
+        {
+          status: 404,
+        }
+      );
     }
 
-    // Get public URL
-    const {
-      data: { publicUrl },
-    } = supabaseAdmin.storage
-      .from("generated-images")
-      .getPublicUrl(filePath);
-
-    // Save image to database
-    const { error: imageError } = await supabaseAdmin
+    // Delete database record
+    const { error: deleteError } = await supabaseAdmin
       .from("images")
-      .insert({
-        user_id: user.id,
-        prompt,
-        image_url: publicUrl,
-      });
+      .delete()
+      .eq("id", imageId)
+      .eq("user_id", user.id);
 
-    // Roll back credits and delete uploaded image if DB insert fails
-    if (imageError) {
-      // Restore credits
-      await supabaseAdmin
-        .from("profiles")
-        .update({
-          credits: credits + IMAGE_GENERATION_COST,
-        })
-        .eq("id", user.id);
+    if (deleteError) {
+      console.error(
+        "Database image deletion error:",
+        deleteError
+      );
 
-      // Remove uploaded file
-      await supabaseAdmin.storage
-        .from("generated-images")
-        .remove([filePath]);
-
-      throw imageError;
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unable to delete image.",
+        },
+        {
+          status: 500,
+        }
+      );
     }
 
-    // Success
+    // Try to remove the corresponding Storage file
+    try {
+      const imageUrl = image.image_url;
+
+      if (imageUrl) {
+        const marker =
+          "/storage/v1/object/public/generated-images/";
+
+        const markerIndex =
+          imageUrl.indexOf(marker);
+
+        if (markerIndex !== -1) {
+          const filePath = decodeURIComponent(
+            imageUrl.substring(
+              markerIndex + marker.length
+            )
+          );
+
+          if (filePath) {
+            const { error: storageError } =
+              await supabaseAdmin.storage
+                .from("generated-images")
+                .remove([filePath]);
+
+            if (storageError) {
+              console.warn(
+                "Storage image deletion warning:",
+                storageError
+              );
+            }
+          }
+        }
+      }
+    } catch (storageError) {
+      console.warn(
+        "Unable to remove image from storage:",
+        storageError
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      image: publicUrl,
-      creditsRemaining,
-      creditsUsed: IMAGE_GENERATION_COST,
+      message: "Image deleted successfully.",
     });
   } catch (error: any) {
-    console.error("Generate Image Error:", error);
+    console.error(
+      "Delete Image Error:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
         error:
           error?.message ||
-          "Something went wrong while generating the image.",
+          "Something went wrong while deleting the image.",
       },
       {
         status: 500,
