@@ -1,34 +1,18 @@
-import {
-  VideoGenerationRequest,
-  VideoGenerationResponse,
-} from "@/types/video";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export async function generateVideo(
-  request: VideoGenerationRequest
-): Promise<VideoGenerationResponse> {
-  try {
-    // Temporary simulation
-    console.log("SONET AI VIDEO REQUEST");
+export async function getReceipt(reference: string) {
+  const { data, error } = await supabaseAdmin
+    .from("payments")
+    .select(
+      "id, user_id, reference, amount, status, created_at"
+    )
+    .eq("reference", reference)
+    .single();
 
-    console.log(request);
-
-    // Simulate AI processing
-    await new Promise((resolve) =>
-      setTimeout(resolve, 3000)
-    );
-
-    return {
-      success: true,
-      message: "Video generation request accepted.",
-      videoUrl: "",
-      creditsRemaining: 100,
-    };
-  } catch (error) {
-    console.error(error);
-
-    return {
-      success: false,
-      message: "Video generation failed.",
-    };
+  if (error) {
+    console.error("Get receipt error:", error);
+    throw new Error("Receipt not found.");
   }
+
+  return data;
 }
