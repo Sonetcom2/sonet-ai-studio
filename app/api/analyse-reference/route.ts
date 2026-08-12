@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import openai from "@/lib/openai";
+import { getOpenAI } from "@/lib/openai";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -110,7 +110,13 @@ export async function POST(req: Request) {
       `data:${file.type};base64,${base64}`;
 
     // ==========================================
-    // 6. ASK VISION MODEL TO CREATE PROMPT
+    // 6. INITIALISE OPENAI
+    // ==========================================
+
+    const openai = getOpenAI();
+
+    // ==========================================
+    // 7. ANALYSE REFERENCE IMAGE
     // ==========================================
 
     const response = await openai.responses.create({
@@ -167,9 +173,7 @@ Return ONLY the final generation prompt.
 
             {
               type: "input_image",
-
               image_url: imageDataUrl,
-
               detail: "high",
             },
           ],
@@ -178,7 +182,7 @@ Return ONLY the final generation prompt.
     });
 
     // ==========================================
-    // 7. EXTRACT GENERATED PROMPT
+    // 8. EXTRACT GENERATED PROMPT
     // ==========================================
 
     const generatedPrompt =
@@ -195,7 +199,7 @@ Return ONLY the final generation prompt.
     );
 
     // ==========================================
-    // 8. RETURN PROMPT
+    // 9. RETURN RESULT
     // ==========================================
 
     return NextResponse.json({

@@ -1,8 +1,20 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-  timeout: 120000, // 2 minutes
-});
+let openaiClient: OpenAI | null = null;
 
-export default openai;
+export function getOpenAI(): OpenAI {
+  if (!openaiClient) {
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY is not configured.");
+    }
+
+    openaiClient = new OpenAI({
+      apiKey,
+      timeout: 120000,
+    });
+  }
+
+  return openaiClient;
+}

@@ -1,4 +1,4 @@
-import openai from "@/lib/openai";
+import { getOpenAI } from "@/lib/openai";
 
 type GenerateImageOptions = {
   prompt: string;
@@ -26,6 +26,9 @@ export async function generateImage({
   try {
     console.log("Generating image...");
 
+    // Initialise OpenAI only when the function is called.
+    const openai = getOpenAI();
+
     const enhancedPrompt = `
 ${prompt}
 
@@ -37,7 +40,7 @@ ${
     ? "Use the provided reference image as visual guidance. Preserve important characteristics from the reference unless the prompt specifically requests changes."
     : ""
 }
-`.trim();
+    `.trim();
 
     /*
      * TEXT-ONLY GENERATION
@@ -70,6 +73,7 @@ ${
      * Convert the data URL into a File so it can be
      * supplied to the OpenAI image editing endpoint.
      */
+
     const matches = referenceImage.match(
       /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
     );
@@ -81,7 +85,10 @@ ${
     const mimeType = matches[1];
     const base64Data = matches[2];
 
-    const imageBuffer = Buffer.from(base64Data, "base64");
+    const imageBuffer = Buffer.from(
+      base64Data,
+      "base64"
+    );
 
     const referenceFile = new File(
       [imageBuffer],
