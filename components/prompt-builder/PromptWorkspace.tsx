@@ -20,6 +20,8 @@ type Props = {
   onGenerateImage: () => void;
   onEnhance: () => void;
   onSave: () => void;
+  onCopy: () => void;
+  onGenerateVideo: () => void;
 };
 
 export default function PromptWorkspace({
@@ -36,12 +38,12 @@ export default function PromptWorkspace({
   onGenerateImage,
   onEnhance,
   onSave,
+  onCopy,
+  onGenerateVideo,
 }: Props) {
   return (
     <div className="grid gap-8 xl:grid-cols-3">
-
       {/* LEFT */}
-
       <CustomPromptForm
         title={title}
         description={description}
@@ -52,7 +54,6 @@ export default function PromptWorkspace({
       />
 
       {/* CENTER */}
-
       <PromptPreview
         prompt={generatedPrompt}
         image={generatedImage}
@@ -60,15 +61,15 @@ export default function PromptWorkspace({
       />
 
       {/* RIGHT */}
-
       <PromptActions
         prompt={generatedPrompt}
         onGenerate={onGenerate}
         onGenerateImage={onGenerateImage}
         onEnhance={onEnhance}
         onSave={onSave}
+        onCopy={onCopy}
+        onGenerateVideo={onGenerateVideo}
       />
-
     </div>
   );
 }
