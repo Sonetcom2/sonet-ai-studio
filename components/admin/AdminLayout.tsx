@@ -1,12 +1,15 @@
 import { ReactNode } from "react";
 import AdminSidebar from "./AdminSidebar";
 import AdminNavbar from "./AdminNavbar";
+import { requireAdmin } from "@/lib/auth/requireAdmin";
 
 type Props = {
   children: ReactNode;
 };
 
-export default function AdminLayout({ children }: Props) {
+export default async function AdminLayout({ children }: Props) {
+  await requireAdmin();
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black">
 
