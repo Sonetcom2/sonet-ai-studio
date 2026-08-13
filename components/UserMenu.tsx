@@ -88,6 +88,10 @@ export default function UserMenu({ user }: Props) {
         🖼️ My Images
       </Link>
 
+      <Link href="/my-videos" style={frameStyle}>
+        🎥 My Videos
+      </Link>
+
       <Link href="/prompt-library" style={frameStyle}>
         📚 Prompt Library
       </Link>

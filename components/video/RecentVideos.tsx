@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 type Video = {
   id: string;
   prompt: string;
@@ -8,17 +10,129 @@ type Video = {
   resolution: string;
   status: string;
   created_at: string;
+  video_url?: string | null;
 };
 
 type Props = {
   videos: Video[];
+  onVideosChange?: () => void;
 };
 
-export default function RecentVideos({ videos }: Props) {
+export default function RecentVideos({
+  videos,
+  onVideosChange,
+}: Props) {
+  const [previewVideo, setPreviewVideo] =
+    useState<Video | null>(null);
+
+  const [deletingId, setDeletingId] =
+    useState<string | null>(null);
+
+  const [downloadingId, setDownloadingId] =
+    useState<string | null>(null);
+
+  async function handleDownload(video: Video) {
+    if (!video.video_url) {
+      alert("Video URL is not available.");
+      return;
+    }
+
+    try {
+      setDownloadingId(video.id);
+
+      const response = await fetch(
+        `/api/download-video?url=${encodeURIComponent(
+          video.video_url
+        )}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Download failed.");
+      }
+
+      const blob = await response.blob();
+
+      const downloadUrl =
+        window.URL.createObjectURL(blob);
+
+      const link =
+        document.createElement("a");
+
+      link.href = downloadUrl;
+      link.download = `sonet-ai-video-${video.id}.mp4`;
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error(
+        "Video download error:",
+        error
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to download video."
+      );
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  async function handleDelete(video: Video) {
+    const confirmed = window.confirm(
+      "Delete this video permanently?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(video.id);
+
+      const response = await fetch(
+        "/api/delete-video",
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: video.id,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            "Unable to delete video."
+        );
+      }
+
+      onVideosChange?.();
+    } catch (error) {
+      console.error(
+        "Video delete error:",
+        error
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete video."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <section className="rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-xl">
-
-      {/* Header */}
 
       <div className="mb-8 flex items-center justify-between">
 
@@ -37,8 +151,6 @@ export default function RecentVideos({ videos }: Props) {
         </div>
 
       </div>
-
-      {/* Empty State */}
 
       {videos.length === 0 ? (
 
@@ -69,15 +181,34 @@ export default function RecentVideos({ videos }: Props) {
               className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-500 hover:shadow-2xl"
             >
 
-              {/* Premium Thumbnail */}
+              {/* Video Preview Area */}
 
-              <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-cyan-600 via-blue-700 to-slate-900">
+              <div className="relative aspect-video overflow-hidden bg-black">
 
-                <div className="absolute inset-0 flex items-center justify-center text-7xl opacity-20">
-                  🎬
-                </div>
+                {video.video_url &&
+                video.status === "completed" ? (
 
-                <div className="absolute bottom-4 left-4 rounded-full bg-black/60 px-3 py-1 text-sm font-bold">
+                  <video
+                    src={video.video_url}
+                    className="h-full w-full object-cover"
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+
+                ) : (
+
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-cyan-600 via-blue-700 to-slate-900">
+
+                    <div className="text-7xl opacity-30">
+                      🎬
+                    </div>
+
+                  </div>
+
+                )}
+
+                <div className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-sm font-bold">
                   {video.duration}
                 </div>
 
@@ -87,15 +218,13 @@ export default function RecentVideos({ videos }: Props) {
 
               </div>
 
-              {/* Card Content */}
-
               <div className="space-y-5 p-6">
 
                 <h3 className="line-clamp-2 text-lg font-bold">
                   {video.prompt}
                 </h3>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
 
                   <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-300">
                     🎨 {video.style}
@@ -120,23 +249,57 @@ export default function RecentVideos({ videos }: Props) {
                 </div>
 
                 <p className="text-xs text-slate-500">
-                  {new Date(video.created_at).toLocaleString()}
+                  {new Date(
+                    video.created_at
+                  ).toLocaleString()}
                 </p>
-
-                {/* Buttons */}
 
                 <div className="grid grid-cols-3 gap-3">
 
-                  <button className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-cyan-500 hover:bg-cyan-500/10">
+                  <button
+                    type="button"
+                    disabled={
+                      !video.video_url ||
+                      video.status !== "completed"
+                    }
+                    onClick={() =>
+                      setPreviewVideo(video)
+                    }
+                    className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
                     ▶ Preview
                   </button>
 
-                  <button className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-green-500 hover:bg-green-500/10">
-                    ⬇ Download
+                  <button
+                    type="button"
+                    disabled={
+                      !video.video_url ||
+                      video.status !== "completed" ||
+                      downloadingId === video.id
+                    }
+                    onClick={() =>
+                      handleDownload(video)
+                    }
+                    className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-green-500 hover:bg-green-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {downloadingId === video.id
+                      ? "⏳"
+                      : "⬇ Download"}
                   </button>
 
-                  <button className="rounded-xl border border-red-600 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-600 hover:text-white">
-                    🗑 Delete
+                  <button
+                    type="button"
+                    disabled={
+                      deletingId === video.id
+                    }
+                    onClick={() =>
+                      handleDelete(video)
+                    }
+                    className="rounded-xl border border-red-600 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {deletingId === video.id
+                      ? "⏳"
+                      : "🗑 Delete"}
                   </button>
 
                 </div>
@@ -150,6 +313,63 @@ export default function RecentVideos({ videos }: Props) {
         </div>
 
       )}
+
+      {/* Preview Modal */}
+
+      {previewVideo &&
+        previewVideo.video_url && (
+
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+            onClick={() =>
+              setPreviewVideo(null)
+            }
+          >
+
+            <div
+              className="relative w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+              onClick={(event) =>
+                event.stopPropagation()
+              }
+            >
+
+              <button
+                type="button"
+                onClick={() =>
+                  setPreviewVideo(null)
+                }
+                className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-4 py-2 text-xl hover:bg-red-600"
+              >
+                ✕
+              </button>
+
+              <video
+                src={previewVideo.video_url}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[80vh] w-full bg-black"
+              />
+
+              <div className="p-5">
+
+                <h3 className="text-xl font-bold">
+                  {previewVideo.prompt}
+                </h3>
+
+                <p className="mt-2 text-sm text-slate-400">
+                  {previewVideo.style} ·{" "}
+                  {previewVideo.duration} ·{" "}
+                  {previewVideo.resolution}
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        )}
 
     </section>
   );

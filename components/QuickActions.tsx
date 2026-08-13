@@ -12,7 +12,7 @@ const actions = [
     button: "Create Image",
   },
   {
-    title: "AI Video Studio",
+    title: " Studio",
     description: "Generate cinematic AI videos",
     href: "/ai-video",
     icon: "🎥",

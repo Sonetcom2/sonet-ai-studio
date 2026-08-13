@@ -21,7 +21,6 @@ export default function Navbar() {
 
   /*
    * DESKTOP NAVIGATION FRAME
-   * The border is intentionally strong and permanent.
    */
   const navItem =
     "flex items-center justify-center whitespace-nowrap rounded-xl border-2 border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-200 shadow-md transition-all duration-200 hover:border-blue-400 hover:bg-slate-800 hover:text-white active:scale-105";
@@ -54,44 +53,48 @@ export default function Navbar() {
           ) : user ? (
             <>
               <Link href="/" className={navItem}>
-                Home
+                🏠 Home
               </Link>
 
               <Link href="/dashboard" className={navItem}>
-                Dashboard
+                📊 Dashboard
               </Link>
 
               <Link href="/ai-image" className={navItem}>
-                AI Image
+                🎨 AI Image
               </Link>
 
               <Link href="/ai-video" className={navItem}>
-                AI Video
+                🎬 AI Video
               </Link>
 
               <Link href="/my-images" className={navItem}>
-                My Images
+                🖼️ My Images
+              </Link>
+
+              <Link href="/my-videos" className={navItem}>
+                🎥 My Videos
               </Link>
 
               <Link href="/prompt-library" className={navItem}>
-                Prompt Library
+                📚 Prompt Library
               </Link>
 
               <Link href="/pricing" className={navItem}>
-                Pricing
+                💳 Pricing
               </Link>
 
               <Link href="/about" className={navItem}>
-                About
+                ℹ️ About
               </Link>
 
               <Link href="/contact" className={navItem}>
-                Contact
+                📩 Contact
               </Link>
 
               {/* USER FRAME */}
               <div className="flex items-center whitespace-nowrap rounded-xl border-2 border-cyan-400 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-300 shadow-md">
-                {username}
+                👤 {username}
               </div>
 
               {/* LOGOUT FRAME */}
@@ -110,25 +113,25 @@ export default function Navbar() {
                 }}
                 className="flex items-center whitespace-nowrap rounded-xl border-2 border-red-400 bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-300 shadow-md transition-all duration-200 hover:bg-red-500/20 active:scale-105"
               >
-                Logout
+                🚪 Logout
               </button>
             </>
           ) : (
             <>
               <Link href="/" className={navItem}>
-                Home
+                🏠 Home
               </Link>
 
               <Link href="/pricing" className={navItem}>
-                Pricing
+                💳 Pricing
               </Link>
 
               <Link href="/about" className={navItem}>
-                About
+                ℹ️ About
               </Link>
 
               <Link href="/contact" className={navItem}>
-                Contact
+                📩 Contact
               </Link>
 
               <Link
@@ -219,6 +222,14 @@ export default function Navbar() {
                   className={mobileItem}
                 >
                   🖼️ My Images
+                </Link>
+
+                <Link
+                  href="/my-videos"
+                  onClick={closeMenu}
+                  className={mobileItem}
+                >
+                  🎥 My Videos
                 </Link>
 
                 <Link
