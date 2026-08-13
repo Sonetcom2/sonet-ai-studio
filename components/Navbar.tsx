@@ -53,11 +53,11 @@ export default function Navbar() {
           ) : user ? (
             <>
               <Link href="/" className={navItem}>
-                🏠 Home
+                Home
               </Link>
 
               <Link href="/dashboard" className={navItem}>
-                📊 Dashboard
+                Dashboard
               </Link>
 
               <Link href="/ai-image" className={navItem}>
@@ -72,6 +72,7 @@ export default function Navbar() {
                 🖼️ My Images
               </Link>
 
+              {/* MY VIDEOS */}
               <Link href="/my-videos" className={navItem}>
                 🎥 My Videos
               </Link>
@@ -119,19 +120,19 @@ export default function Navbar() {
           ) : (
             <>
               <Link href="/" className={navItem}>
-                🏠 Home
+                Home
               </Link>
 
               <Link href="/pricing" className={navItem}>
-                💳 Pricing
+                Pricing
               </Link>
 
               <Link href="/about" className={navItem}>
-                ℹ️ About
+                About
               </Link>
 
               <Link href="/contact" className={navItem}>
-                📩 Contact
+                Contact
               </Link>
 
               <Link
@@ -224,6 +225,7 @@ export default function Navbar() {
                   🖼️ My Images
                 </Link>
 
+                {/* MY VIDEOS */}
                 <Link
                   href="/my-videos"
                   onClick={closeMenu}
