@@ -39,13 +39,36 @@ const cameras = [
   "Tracking Shot",
 ];
 
-const durations = ["5 sec", "10 sec", "15 sec"];
+/*
+ * Ray 2 currently supports 5 and 9 seconds.
+ */
+const durations = [
+  "5 sec",
+  "9 sec",
+];
 
-const ratios = ["16:9", "9:16", "1:1"];
+const ratios = [
+  "16:9",
+  "9:16",
+  "1:1",
+];
 
-const resolutions = ["720P", "1080P"];
+/*
+ * ray-2-720p is a 720p model.
+ * 1080P is therefore not offered as a native model setting.
+ *
+ * We keep the existing resolution state because the application
+ * may use it elsewhere, but only expose the supported model level.
+ */
+const resolutions = [
+  "720P",
+];
 
-const qualities = ["Fast", "Balanced", "Premium"];
+const qualities = [
+  "Fast",
+  "Balanced",
+  "Premium",
+];
 
 export default function VideoSettings({
   style,
@@ -70,22 +93,21 @@ export default function VideoSettings({
     title: string;
     options: string[];
     value: string;
-    onChange: (v: string) => void;
+    onChange: (value: string) => void;
   }) {
     return (
-      <div className="rounded-2xl bg-slate-900 border border-slate-700 p-6">
-
-        <h3 className="text-lg font-bold mb-5">
+      <div className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
+        <h3 className="mb-5 text-lg font-bold">
           {title}
         </h3>
 
         <div className="grid grid-cols-2 gap-3">
-
           {options.map((option) => (
             <button
               key={option}
+              type="button"
               onClick={() => onChange(option)}
-              className={`rounded-xl py-3 px-4 transition font-semibold ${
+              className={`rounded-xl px-4 py-3 font-semibold transition ${
                 value === option
                   ? "bg-cyan-500 text-white"
                   : "bg-slate-800 hover:bg-slate-700"
@@ -94,16 +116,13 @@ export default function VideoSettings({
               {option}
             </button>
           ))}
-
         </div>
-
       </div>
     );
   }
 
   return (
     <section className="space-y-6">
-
       <Selector
         title="🎨 Video Style"
         options={styles}
@@ -145,7 +164,6 @@ export default function VideoSettings({
         value={quality}
         onChange={setQuality}
       />
-
     </section>
   );
 }
