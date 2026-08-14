@@ -14,6 +14,20 @@ export type SiteSettings = {
   updated_at: string;
 };
 
+type SettingsUpdate = Partial<
+  Pick<
+    SiteSettings,
+    | "site_name"
+    | "maintenance_mode"
+    | "free_credits"
+    | "pro_price"
+    | "pro_credits"
+    | "premium_price"
+    | "image_generation_cost"
+    | "video_generation_cost"
+  >
+>;
+
 export async function getSettings(): Promise<SiteSettings> {
   const { data, error } = await supabaseAdmin
     .from("settings")
@@ -30,26 +44,18 @@ export async function getSettings(): Promise<SiteSettings> {
 }
 
 export async function updateSettings(
-  settings: Partial<
-    Pick<
-      SiteSettings,
-      | "site_name"
-      | "maintenance_mode"
-      | "free_credits"
-      | "pro_price"
-      | "pro_credits"
-      | "premium_price"
-      | "image_generation_cost"
-      | "video_generation_cost"
-    >
-  >
+  settings: SettingsUpdate
 ): Promise<SiteSettings> {
+  // First get the existing settings row.
+  const current = await getSettings();
+
   const { data, error } = await supabaseAdmin
     .from("settings")
     .update({
       ...settings,
       updated_at: new Date().toISOString(),
     })
+    .eq("id", current.id)
     .select("*")
     .single();
 
