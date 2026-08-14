@@ -5,7 +5,6 @@ import { generateImage } from "@/services/imageService";
 
 const IMAGE_GENERATION_COST = 10;
 
-// Maximum reference image size: 10 MB
 const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024;
 
 const ALLOWED_IMAGE_TYPES = [
@@ -17,19 +16,16 @@ const ALLOWED_IMAGE_TYPES = [
 export async function POST(req: Request) {
   let userId: string | null = null;
   let originalCredits: number | null = null;
-  let uploadedFilePath: string | null = null;
+  let creditsDeducted = false;
 
   try {
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("🚀 GENERATE IMAGE API START");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("========================================");
+    console.log("GENERATE IMAGE API START");
+    console.log("========================================");
 
     const supabase = await createClient();
 
-    // ==========================================
-    // 1. GET LOGGED-IN USER
-    // ==========================================
-
+    // 1. Get authenticated user
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -40,18 +36,13 @@ export async function POST(req: Request) {
           success: false,
           error: "Unauthorized. Please login first.",
         },
-        {
-          status: 401,
-        }
+        { status: 401 }
       );
     }
 
     userId = user.id;
 
-    // ==========================================
-    // 2. READ FORM DATA
-    // ==========================================
-
+    // 2. Read form data
     const formData = await req.formData();
 
     const prompt = String(
@@ -62,9 +53,20 @@ export async function POST(req: Request) {
       formData.get("model") ?? "gpt-image-1"
     );
 
-    const quality = String(
+    const qualityValue = String(
       formData.get("quality") ?? "high"
-    ) as "low" | "medium" | "high" | "auto";
+    );
+
+    const quality: "low" | "medium" | "high" | "auto" =
+      ["low", "medium", "high", "auto"].includes(
+        qualityValue
+      )
+        ? (qualityValue as
+            | "low"
+            | "medium"
+            | "high"
+            | "auto")
+        : "high";
 
     const style = String(
       formData.get("style") ?? "auto"
@@ -78,57 +80,52 @@ export async function POST(req: Request) {
       "referenceImage"
     );
 
-    // ==========================================
-    // 3. VALIDATE PROMPT
-    // ==========================================
-
+    // 3. Validate prompt
     if (!prompt) {
       return NextResponse.json(
         {
           success: false,
           error: "Prompt is required.",
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // ==========================================
-    // 4. VALIDATE REFERENCE IMAGE
-    // ==========================================
-
+    // 4. Process optional reference image
     let referenceImageDataUrl: string | null = null;
 
     if (referenceImage instanceof File) {
       console.log(
-        "📷 Reference image received:",
+        "Reference image:",
         referenceImage.name
       );
 
-      if (!ALLOWED_IMAGE_TYPES.includes(referenceImage.type)) {
+      if (
+        !ALLOWED_IMAGE_TYPES.includes(
+          referenceImage.type
+        )
+      ) {
         return NextResponse.json(
           {
             success: false,
             error:
               "Invalid reference image format. Please use PNG, JPG, JPEG, or WEBP.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
-      if (referenceImage.size > MAX_REFERENCE_IMAGE_SIZE) {
+      if (
+        referenceImage.size >
+        MAX_REFERENCE_IMAGE_SIZE
+      ) {
         return NextResponse.json(
           {
             success: false,
             error:
               "Reference image is too large. Maximum size is 10 MB.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -138,13 +135,10 @@ export async function POST(req: Request) {
             success: false,
             error: "The reference image is empty.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
-      // Convert uploaded image into a data URL.
       const arrayBuffer =
         await referenceImage.arrayBuffer();
 
@@ -156,14 +150,11 @@ export async function POST(req: Request) {
         `data:${referenceImage.type};base64,${base64}`;
 
       console.log(
-        "✅ Reference image converted successfully"
+        "Reference image converted successfully."
       );
     }
 
-    // ==========================================
-    // 5. GET USER PROFILE / CREDITS
-    // ==========================================
-
+    // 5. Get user's profile and credits
     const {
       data: profile,
       error: profileError,
@@ -184,9 +175,7 @@ export async function POST(req: Request) {
           success: false,
           error: "Profile not found.",
         },
-        {
-          status: 404,
-        }
+        { status: 404 }
       );
     }
 
@@ -196,11 +185,11 @@ export async function POST(req: Request) {
 
     originalCredits = currentCredits;
 
-    // ==========================================
-    // 6. CHECK CREDITS
-    // ==========================================
-
-    if (currentCredits < IMAGE_GENERATION_COST) {
+    // 6. Check credits
+    if (
+      currentCredits <
+      IMAGE_GENERATION_COST
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -208,27 +197,22 @@ export async function POST(req: Request) {
             "You don't have enough credits to generate an image.",
           creditsRemaining: currentCredits,
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // ==========================================
-    // 7. DEDUCT CREDITS
-    // ==========================================
-
+    // 7. Deduct credits
     const newCredits =
-      currentCredits - IMAGE_GENERATION_COST;
+      currentCredits -
+      IMAGE_GENERATION_COST;
 
-    const {
-      error: deductError,
-    } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        credits: newCredits,
-      })
-      .eq("id", user.id);
+    const { error: deductError } =
+      await supabaseAdmin
+        .from("profiles")
+        .update({
+          credits: newCredits,
+        })
+        .eq("id", user.id);
 
     if (deductError) {
       console.error(
@@ -241,97 +225,77 @@ export async function POST(req: Request) {
           success: false,
           error: "Unable to deduct credits.",
         },
-        {
-          status: 500,
-        }
+        { status: 500 }
       );
     }
 
+    creditsDeducted = true;
+
     console.log(
-      `💳 Credits deducted: ${IMAGE_GENERATION_COST}`
+      `Credits deducted: ${IMAGE_GENERATION_COST}`
     );
 
     console.log(
-      `💰 Remaining credits: ${newCredits}`
+      `Remaining credits: ${newCredits}`
     );
 
-    // ==========================================
-    // 8. GENERATE IMAGE
-    // ==========================================
+    // 8. Generate image
+    console.log(
+      "Generating AI image..."
+    );
 
-    console.log("🎨 Generating AI image...");
+    const generatedImage =
+      await generateImage({
+        prompt,
+        model,
+        quality,
+        style,
+        aspectRatio,
+        referenceImage:
+          referenceImageDataUrl,
+      });
 
-    if (referenceImageDataUrl) {
-      console.log(
-        "📷 Using reference image generation."
-      );
-    } else {
-      console.log(
-        "📝 Using text-only generation."
-      );
-    }
-
-    const image = await generateImage({
-      prompt,
-      model,
-      quality,
-      style,
-      aspectRatio,
-      referenceImage:
-        referenceImageDataUrl,
-    });
-
-    if (!image) {
+    if (!generatedImage) {
       throw new Error(
-        "Image generation returned no image."
+        "No image was generated."
       );
     }
 
-    console.log(
-      "✅ AI image generated successfully."
-    );
+    // 9. Convert generated data URL to buffer
+    const matches =
+      generatedImage.match(
+        /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
+      );
 
-    // ==========================================
-    // 9. CONVERT GENERATED IMAGE
-    // ==========================================
-
-    const base64 = image.split(",")[1];
-
-    if (!base64) {
+    if (!matches) {
       throw new Error(
-        "Generated image data is invalid."
+        "Generated image has an invalid format."
       );
     }
 
-    const buffer = Buffer.from(
-      base64,
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+
+    const imageBuffer = Buffer.from(
+      base64Data,
       "base64"
     );
 
-    // ==========================================
-    // 10. UPLOAD TO SUPABASE STORAGE
-    // ==========================================
-
-    const fileName =
-      `${Date.now()}-${crypto.randomUUID()}.png`;
-
+    // 10. Upload generated image
     const filePath =
-      `${user.id}/${fileName}`;
+      `${user.id}/${Date.now()}-${crypto.randomUUID()}.png`;
 
-    uploadedFilePath = filePath;
-
-    console.log(
-      "☁️ Uploading generated image..."
-    );
-
-    const {
-      error: uploadError,
-    } = await supabaseAdmin.storage
-      .from("generated-images")
-      .upload(filePath, buffer, {
-        contentType: "image/png",
-        upsert: false,
-      });
+    const { error: uploadError } =
+      await supabaseAdmin.storage
+        .from("generated-images")
+        .upload(
+          filePath,
+          imageBuffer,
+          {
+            contentType: mimeType,
+            upsert: false,
+          }
+        );
 
     if (uploadError) {
       console.error(
@@ -344,10 +308,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // ==========================================
-    // 11. GET PUBLIC URL
-    // ==========================================
-
+    // 11. Get public URL
     const {
       data: { publicUrl },
     } = supabaseAdmin.storage
@@ -361,22 +322,18 @@ export async function POST(req: Request) {
     }
 
     console.log(
-      "✅ Generated image uploaded."
+      "Generated image uploaded."
     );
 
-    // ==========================================
-    // 12. SAVE IMAGE TO DATABASE
-    // ==========================================
-
-    const {
-      error: imageError,
-    } = await supabaseAdmin
-      .from("images")
-      .insert({
-        user_id: user.id,
-        prompt,
-        image_url: publicUrl,
-      });
+    // 12. Save image to database
+    const { error: imageError } =
+      await supabaseAdmin
+        .from("images")
+        .insert({
+          user_id: user.id,
+          prompt,
+          image_url: publicUrl,
+        });
 
     if (imageError) {
       console.error(
@@ -390,38 +347,43 @@ export async function POST(req: Request) {
     }
 
     console.log(
-      "✅ Image saved to database."
+      "Image saved to database."
     );
 
-    // ==========================================
-    // 13. SUCCESS
-    // ==========================================
-
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("✅ GENERATE IMAGE API SUCCESS");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    // 13. Success
+    console.log(
+      "========================================"
+    );
+    console.log(
+      "GENERATE IMAGE API SUCCESS"
+    );
+    console.log(
+      "========================================"
+    );
 
     return NextResponse.json({
       success: true,
       image: publicUrl,
-      creditsUsed: IMAGE_GENERATION_COST,
+      creditsUsed:
+        IMAGE_GENERATION_COST,
       creditsRemaining: newCredits,
       hasReferenceImage:
         Boolean(referenceImageDataUrl),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error(
-      "🔥 Generate Image Error:",
+      "Generate Image Error:",
       error
     );
 
-    // ==========================================
-    // ROLLBACK
-    // ==========================================
-
-    if (userId && originalCredits !== null) {
+    // Roll back credits only if they were actually deducted.
+    if (
+      userId &&
+      originalCredits !== null &&
+      creditsDeducted
+    ) {
       console.log(
-        "↩️ Rolling back credits..."
+        "Rolling back credits..."
       );
 
       const {
@@ -435,56 +397,25 @@ export async function POST(req: Request) {
 
       if (rollbackError) {
         console.error(
-          "❌ Credit rollback failed:",
+          "Credit rollback error:",
           rollbackError
         );
       } else {
         console.log(
-          "✅ Credits restored:",
-          originalCredits
+          "Credits successfully restored."
         );
       }
     }
-
-    // ==========================================
-    // DELETE UPLOADED GENERATED IMAGE
-    // ==========================================
-
-    if (uploadedFilePath) {
-      console.log(
-        "🗑 Removing incomplete generated image..."
-      );
-
-      const {
-        error: removeError,
-      } = await supabaseAdmin.storage
-        .from("generated-images")
-        .remove([
-          uploadedFilePath,
-        ]);
-
-      if (removeError) {
-        console.error(
-          "Storage cleanup error:",
-          removeError
-        );
-      }
-    }
-
-    // ==========================================
-    // RETURN ERROR
-    // ==========================================
 
     return NextResponse.json(
       {
         success: false,
         error:
-          error?.message ||
-          "Something went wrong while generating the image.",
+          error instanceof Error
+            ? error.message
+            : "Image generation failed.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
