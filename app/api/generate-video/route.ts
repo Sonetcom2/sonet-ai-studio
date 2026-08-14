@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 import { ReplicateVideoProvider } from "@/providers/replicate/videoProvider";
 
@@ -9,20 +10,25 @@ import { VideoGenerationRequest } from "@/types/video";
 import {
   getUserCredits,
   deductCredits,
-  VIDEO_GENERATION_COST,
 } from "@/services/creditService";
 
+import { getSettings } from "@/services/settingsService";
+
 export async function POST(req: NextRequest) {
+  let userId: string | null = null;
+  let originalCredits: number | null = null;
+
   try {
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("🚀 API START");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("========================================");
+    console.log("GENERATE VIDEO API START");
+    console.log("========================================");
 
     const supabase = await createClient();
 
-    const provider = new ReplicateVideoProvider();
+    // ==========================================
+    // 1. GET LOGGED-IN USER
+    // ==========================================
 
-    // Get logged-in user
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -39,8 +45,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Read request body
-    const body: VideoGenerationRequest = await req.json();
+    userId = user.id;
+
+    // ==========================================
+    // 2. GET ADMIN SETTINGS
+    // ==========================================
+
+    const settings = await getSettings();
+
+    const videoGenerationCost = Number(
+      settings.video_generation_cost
+    );
+
+    if (
+      !Number.isFinite(videoGenerationCost) ||
+      videoGenerationCost <= 0
+    ) {
+      throw new Error(
+        "Invalid video generation cost configured."
+      );
+    }
+
+    console.log(
+      "Video generation cost:",
+      videoGenerationCost
+    );
+
+    // ==========================================
+    // 3. READ REQUEST BODY
+    // ==========================================
+
+    const body: VideoGenerationRequest =
+      await req.json();
 
     if (!body.prompt || !body.prompt.trim()) {
       return NextResponse.json(
@@ -54,19 +90,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get current credits
-    const { credits } = await getUserCredits(user.id);
+    // ==========================================
+    // 4. GET CURRENT CREDITS
+    // ==========================================
 
-    console.log("💳 Current credits:", credits);
-    console.log("🎬 Video cost:", VIDEO_GENERATION_COST);
+    const { credits } = await getUserCredits(
+      user.id
+    );
 
-    // Check whether user has enough credits
-    if (credits < VIDEO_GENERATION_COST) {
+    originalCredits = credits;
+
+    console.log(
+      "Current credits:",
+      credits
+    );
+
+    console.log(
+      "Required credits:",
+      videoGenerationCost
+    );
+
+    // ==========================================
+    // 5. CHECK CREDITS
+    // ==========================================
+
+    if (credits < videoGenerationCost) {
       return NextResponse.json(
         {
           success: false,
-          message: `You need ${VIDEO_GENERATION_COST} credits to generate a video. You currently have ${credits}.`,
+          message: `You need ${videoGenerationCost} credits to generate a video. You currently have ${credits}.`,
           creditsRemaining: credits,
+          creditsRequired: videoGenerationCost,
         },
         {
           status: 403,
@@ -74,32 +128,84 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("🔥 STEP A - Credits check passed");
+    console.log(
+      "Credit check passed."
+    );
 
-    // Generate video with Replicate
-    const result = await provider.generateVideo({
-      prompt: body.prompt,
-      style: body.style,
-      camera: body.camera,
-      duration: body.duration,
-      aspectRatio: body.aspectRatio,
-      resolution: body.resolution,
-      quality: body.quality,
-    });
+    // ==========================================
+    // 6. GENERATE VIDEO
+    // ==========================================
 
-    console.log("🎬 Replicate result:", result);
+    const provider =
+      new ReplicateVideoProvider();
 
-    // Replicate failed
-    if (!result.success) {
-      return NextResponse.json(result, {
-        status: 500,
+    console.log(
+      "Starting video generation..."
+    );
+
+    const result =
+      await provider.generateVideo({
+        prompt: body.prompt,
+        style: body.style,
+        camera: body.camera,
+        duration: body.duration,
+        aspectRatio: body.aspectRatio,
+        resolution: body.resolution,
+        quality: body.quality,
       });
+
+    console.log(
+      "Replicate result:",
+      result
+    );
+
+    // ==========================================
+    // 7. CHECK GENERATION RESULT
+    // ==========================================
+
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            result.message ||
+            "Video generation failed.",
+        },
+        {
+          status: 500,
+        }
+      );
     }
 
-    console.log("🔥 STEP B - Video generated successfully");
+    console.log(
+      "Video generated successfully."
+    );
 
-    // Save video to database
-    const { error: videoError } = await supabase
+    // ==========================================
+    // 8. DEDUCT CREDITS
+    // ==========================================
+
+    const creditsRemaining =
+      await deductCredits(
+        user.id,
+        videoGenerationCost
+      );
+
+    console.log(
+      `Credits deducted: ${videoGenerationCost}`
+    );
+
+    console.log(
+      `Credits remaining: ${creditsRemaining}`
+    );
+
+    // ==========================================
+    // 9. SAVE VIDEO TO DATABASE
+    // ==========================================
+
+    const {
+      error: videoError,
+    } = await supabaseAdmin
       .from("video_generations")
       .insert({
         user_id: user.id,
@@ -111,62 +217,34 @@ export async function POST(req: NextRequest) {
         resolution: body.resolution,
         quality: body.quality,
         status: result.status,
-        video_url: result.videoUrl ?? null,
-        credits_used: VIDEO_GENERATION_COST,
+        video_url:
+          result.videoUrl ?? null,
+        credits_used:
+          videoGenerationCost,
       });
 
     if (videoError) {
-      console.error("❌ Video database error:", videoError);
-
-      return NextResponse.json(
-        {
-          success: false,
-          message: videoError.message,
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    console.log("🔥 STEP C - Video saved");
-
-    // Deduct video credits
-    let creditsRemaining: number;
-
-    try {
-      creditsRemaining = await deductCredits(
-        user.id,
-        VIDEO_GENERATION_COST
-      );
-    } catch (creditError) {
       console.error(
-        "❌ Credit deduction error:",
-        creditError
+        "Video database error:",
+        videoError
       );
 
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            creditError instanceof Error
-              ? creditError.message
-              : "Unable to deduct video credits.",
-        },
-        {
-          status: 500,
-        }
+      throw new Error(
+        "Video generated but could not be saved."
       );
     }
 
     console.log(
-      "💳 Credits remaining:",
-      creditsRemaining
+      "Video saved to database."
     );
 
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("✅ API FINISHED");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    // ==========================================
+    // 10. SUCCESS
+    // ==========================================
+
+    console.log("========================================");
+    console.log("GENERATE VIDEO API SUCCESS");
+    console.log("========================================");
 
     return NextResponse.json({
       success: true,
@@ -175,13 +253,50 @@ export async function POST(req: NextRequest) {
       jobId: result.jobId,
       videoUrl: result.videoUrl,
       message:
-        result.message || "Video generated successfully.",
-      creditsUsed: VIDEO_GENERATION_COST,
+        result.message ||
+        "Video generated successfully.",
+      creditsUsed:
+        videoGenerationCost,
       creditsRemaining,
     });
   } catch (error) {
-    console.error("🔥 FATAL ERROR");
-    console.error(error);
+    console.error(
+      "Generate Video Error:",
+      error
+    );
+
+    // ==========================================
+    // ROLLBACK CREDITS
+    // ==========================================
+
+    if (
+      userId &&
+      originalCredits !== null
+    ) {
+      console.log(
+        "Rolling back credits..."
+      );
+
+      const {
+        error: rollbackError,
+      } = await supabaseAdmin
+        .from("profiles")
+        .update({
+          credits: originalCredits,
+        })
+        .eq("id", userId);
+
+      if (rollbackError) {
+        console.error(
+          "Credit rollback error:",
+          rollbackError
+        );
+      } else {
+        console.log(
+          "Credits successfully rolled back."
+        );
+      }
+    }
 
     return NextResponse.json(
       {
