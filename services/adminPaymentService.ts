@@ -3,6 +3,28 @@ import { createClient } from "@/lib/supabase/server";
 export async function getAllPayments() {
   const supabase = await createClient();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Unauthorized.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (
+    profileError ||
+    !profile ||
+    profile.role !== "ADMIN"
+  ) {
+    throw new Error("Forbidden.");
+  }
+
   const { data, error } = await supabase
     .from("payments")
     .select(`
@@ -19,8 +41,8 @@ export async function getAllPayments() {
 
   if (error) {
     console.error("Admin Payments Error:", error);
-    return [];
+    throw new Error("Unable to load payments.");
   }
 
-  return data;
+  return data ?? [];
 }

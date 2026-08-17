@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenAI } from "@/lib/openai";
+import { generateAIText } from "@/services/aiService";
 
 export async function POST(req: NextRequest) {
   try {
     const { prompt } = await req.json();
 
-    if (!prompt || !prompt.trim()) {
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       return NextResponse.json(
         {
+          success: false,
           error: "Prompt is required.",
         },
         {
@@ -16,30 +17,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const openai = getOpenAI();
+    const enhancedPrompt = await generateAIText({
+      systemPrompt: `
+You are SONET AI-STUDIO Prompt Engineer, an expert prompt engineer specializing in image and video generation.
 
-    const response = await openai.responses.create({
-      model: "gpt-5-mini",
-      input: `
-You are a world-class AI prompt engineer.
+Transform the user's simple idea into a professional, detailed generation prompt.
 
-Rewrite the following prompt into a professional prompt suitable for GPT Image, Flux, Midjourney, Ideogram, and other image/video generation models.
-
-Keep the meaning.
-Improve quality.
-Add professional photography language.
-Do not explain.
-Return only the enhanced prompt.
-
-Prompt:
-
-${prompt}
+Requirements:
+- Preserve the user's original intent.
+- Improve specificity and visual clarity.
+- Add appropriate subject details.
+- Add composition and framing when useful.
+- Add professional lighting when appropriate.
+- Add camera/lens language when useful.
+- Add environment and background details when appropriate.
+- Improve realism, texture, detail, and visual quality when relevant.
+- Do not unnecessarily change the subject.
+- Do not invent important facts that contradict the user's request.
+- Do not explain your changes.
+- Return ONLY the final optimized prompt.
       `.trim(),
+      userPrompt: prompt.trim(),
+      model: "gpt-5-mini",
+      maxOutputTokens: 2000,
     });
 
     return NextResponse.json({
       success: true,
-      prompt: response.output_text,
+      prompt: enhancedPrompt,
     });
   } catch (error) {
     console.error("Enhance prompt error:", error);
@@ -47,7 +52,10 @@ ${prompt}
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to enhance prompt",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to enhance prompt.",
       },
       {
         status: 500,

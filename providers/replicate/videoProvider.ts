@@ -6,7 +6,13 @@ import {
   VideoProvider,
 } from "@/services/videoProvider";
 
-function mapCameraToConcept(camera: string): string | undefined {
+function mapCameraToConcept(
+  camera?: string
+): string | undefined {
+  if (!camera) {
+    return undefined;
+  }
+
   const cameraMap: Record<string, string> = {
     Static: "static",
     "Pan Left": "pan_left",
@@ -20,7 +26,9 @@ function mapCameraToConcept(camera: string): string | undefined {
   return cameraMap[camera];
 }
 
-function mapDuration(duration: string): number {
+function mapDuration(
+  duration?: string
+): number {
   if (duration === "5 sec") {
     return 5;
   }
@@ -42,76 +50,144 @@ function buildPrompt(
 ): string {
   const modifiers: string[] = [];
 
-  if (style) {
-    modifiers.push(`Visual style: ${style}.`);
+  if (style?.trim()) {
+    modifiers.push(
+      `Visual style: ${style.trim()}.`
+    );
   }
 
-  if (quality) {
-    modifiers.push(`Rendering preference: ${quality}.`);
+  if (quality?.trim()) {
+    modifiers.push(
+      `Rendering preference: ${quality.trim()}.`
+    );
   }
 
-  if (resolution) {
-    modifiers.push(`Target resolution preference: ${resolution}.`);
+  if (resolution?.trim()) {
+    modifiers.push(
+      `Target resolution preference: ${resolution.trim()}.`
+    );
   }
+
+  const cleanPrompt = prompt.trim();
 
   if (modifiers.length === 0) {
-    return prompt.trim();
+    return cleanPrompt;
   }
 
-  return `${prompt.trim()}\n\n${modifiers.join(" ")}`;
+  return `${cleanPrompt}\n\n${modifiers.join(" ")}`;
 }
 
-export class ReplicateVideoProvider implements VideoProvider {
+export class ReplicateVideoProvider
+  implements VideoProvider
+{
   async generateVideo(
     options: VideoGenerationOptions
   ): Promise<VideoGenerationResult> {
     try {
-      console.log("━━━━━━━━━━━━━━━━━━━━");
-      console.log("🚀 REPLICATE VIDEO");
-      console.log("━━━━━━━━━━━━━━━━━━━━");
-
-      const duration = mapDuration(options.duration);
-
-      const concept = mapCameraToConcept(options.camera);
-
-      const finalPrompt = buildPrompt(
-        options.prompt,
-        options.style,
-        options.quality,
-        options.resolution
+      console.log(
+        "========================================"
+      );
+      console.log(
+        "REPLICATE VIDEO PROVIDER"
+      );
+      console.log(
+        "========================================"
       );
 
-      const input: Record<string, unknown> = {
+      if (
+        !options.prompt ||
+        !options.prompt.trim()
+      ) {
+        throw new Error(
+          "Video prompt is required."
+        );
+      }
+
+      const duration = mapDuration(
+        options.duration
+      );
+
+      const concept =
+        mapCameraToConcept(
+          options.camera
+        );
+
+      const finalPrompt =
+        buildPrompt(
+          options.prompt,
+          options.style,
+          options.quality,
+          options.resolution
+        );
+
+      const input: Record<
+        string,
+        unknown
+      > = {
         prompt: finalPrompt,
         duration,
-        aspect_ratio: options.aspectRatio,
+        aspect_ratio:
+          options.aspectRatio,
       };
 
       if (concept) {
         input.concepts = [concept];
       }
 
-      console.log("🎬 Replicate input:", {
-        ...input,
-        prompt: "[REDACTED]",
-      });
+      console.log(
+        "Replicate model:",
+        "luma/ray-2-720p"
+      );
 
-      const output = await replicate.run(
-        "luma/ray-2-720p",
+      console.log(
+        "Video duration:",
+        duration
+      );
+
+      console.log(
+        "Aspect ratio:",
+        options.aspectRatio
+      );
+
+      console.log(
+        "Camera concept:",
+        concept || "none"
+      );
+
+      console.log(
+        "Replicate input:",
         {
-          input,
+          ...input,
+          prompt: "[REDACTED]",
         }
       );
 
-      console.log("🎬 Replicate generation completed.");
+      const output =
+        await replicate.run(
+          "luma/ray-2-720p",
+          {
+            input,
+          }
+        );
 
-      let videoUrl: string | undefined;
+      console.log(
+        "Replicate generation completed."
+      );
+
+      let videoUrl:
+        | string
+        | undefined;
 
       if (
         output &&
-        typeof output === "object" &&
+        typeof output ===
+          "object" &&
         "url" in output &&
-        typeof (output as { url?: unknown }).url === "function"
+        typeof (
+          output as {
+            url?: unknown;
+          }
+        ).url === "function"
       ) {
         videoUrl = (
           output as {
@@ -120,13 +196,27 @@ export class ReplicateVideoProvider implements VideoProvider {
         ).url();
       }
 
+      if (
+        !videoUrl &&
+        typeof output === "string"
+      ) {
+        videoUrl = output;
+      }
+
       if (!videoUrl) {
+        console.error(
+          "Replicate output did not contain a usable video URL:",
+          output
+        );
+
         throw new Error(
           "Replicate completed successfully but no video URL was returned."
         );
       }
 
-      console.log("🎬 Video URL received.");
+      console.log(
+        "Video URL received successfully."
+      );
 
       return {
         success: true,
@@ -134,20 +224,25 @@ export class ReplicateVideoProvider implements VideoProvider {
         status: "completed",
         jobId: crypto.randomUUID(),
         videoUrl,
-        message: "Video generated successfully.",
+        message:
+          "Video generated successfully.",
       };
     } catch (error) {
-      console.error("❌ REPLICATE VIDEO ERROR");
-      console.error(error);
+      console.error(
+        "Replicate video generation error:",
+        error
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Replicate video generation failed.";
 
       return {
         success: false,
         provider: "Replicate",
         status: "failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Replicate video generation failed.",
+        message,
       };
     }
   }
@@ -155,11 +250,18 @@ export class ReplicateVideoProvider implements VideoProvider {
   async getGenerationStatus(
     jobId: string
   ): Promise<VideoGenerationResult> {
+    console.log(
+      "Checking video generation job:",
+      jobId
+    );
+
     return {
       success: true,
       provider: "Replicate",
-      status: "completed",
+      status: "processing",
       jobId,
+      message:
+        "Video generation is still processing.",
     };
   }
 }

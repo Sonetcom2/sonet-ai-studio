@@ -21,24 +21,56 @@ export default function PromptBuilder() {
   const [selectedTemplate, setSelectedTemplate] =
     useState<PromptSelection>(promptTemplates.Portrait);
 
-  const [subject, setSubject] = useState("African Woman");
-  const [style, setStyle] = useState("Luxury Fashion");
-  const [camera, setCamera] = useState("85mm Portrait");
-  const [lighting, setLighting] = useState("Soft Studio");
-  const [background, setBackground] = useState("Luxury Studio");
-  const [pose, setPose] = useState("Standing");
-  const [clothing, setClothing] = useState("Luxury Suit");
-  const [hair, setHair] = useState("Long Wavy");
-  const [mood, setMood] = useState("Elegant");
-  const [quality, setQuality] = useState("high");
+  const [subject, setSubject] =
+    useState("African Woman");
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
+  const [style, setStyle] =
+    useState("Luxury Fashion");
 
-  const [generatedPrompt, setGeneratedPrompt] = useState("");
-  const [generatedImage, setGeneratedImage] = useState("");
-  const [loadingImage, setLoadingImage] = useState(false);
+  const [camera, setCamera] =
+    useState("85mm Portrait");
+
+  const [lighting, setLighting] =
+    useState("Soft Studio");
+
+  const [background, setBackground] =
+    useState("Luxury Studio");
+
+  const [pose, setPose] =
+    useState("Standing");
+
+  const [clothing, setClothing] =
+    useState("Luxury Suit");
+
+  const [hair, setHair] =
+    useState("Long Wavy");
+
+  const [mood, setMood] =
+    useState("Elegant");
+
+  const [quality, setQuality] =
+    useState("high");
+
+  const [title, setTitle] =
+    useState("");
+
+  const [description, setDescription] =
+    useState("");
+
+  const [negativePrompt, setNegativePrompt] =
+    useState("");
+
+  const [generatedPrompt, setGeneratedPrompt] =
+    useState("");
+
+  const [generatedImage, setGeneratedImage] =
+    useState("");
+
+  const [loadingImage, setLoadingImage] =
+    useState(false);
+
+  const [loadingEnhancement, setLoadingEnhancement] =
+    useState(false);
 
   function generatePrompt() {
     const prompt = `
@@ -93,6 +125,80 @@ Extremely detailed.
     setGeneratedPrompt(prompt);
   }
 
+  async function enhancePrompt() {
+    if (!generatedPrompt.trim()) {
+      alert("Generate a prompt first.");
+      return;
+    }
+
+    if (loadingEnhancement) {
+      return;
+    }
+
+    try {
+      setLoadingEnhancement(true);
+
+      const response = await fetch(
+        "/api/enhance-prompt",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            prompt: generatedPrompt.trim(),
+          }),
+        }
+      );
+
+      let data: any;
+
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          "The server returned an invalid response."
+        );
+      }
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            "AI prompt enhancement failed."
+        );
+      }
+
+      if (
+        !data.prompt ||
+        typeof data.prompt !== "string"
+      ) {
+        throw new Error(
+          "OpenAI returned an empty enhanced prompt."
+        );
+      }
+
+      setGeneratedPrompt(
+        data.prompt.trim()
+      );
+
+      alert(
+        "✨ Prompt enhanced successfully."
+      );
+    } catch (error: any) {
+      console.error(
+        "AI prompt enhancement error:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Unable to enhance prompt."
+      );
+    } finally {
+      setLoadingEnhancement(false);
+    }
+  }
+
   async function generateImage() {
     if (!generatedPrompt.trim()) {
       alert("Generate a prompt first.");
@@ -108,10 +214,26 @@ Extremely detailed.
         "prompt",
         generatedPrompt.trim()
       );
-      formData.append("model", "gpt-image-1");
-      formData.append("quality", quality);
-      formData.append("style", "auto");
-      formData.append("aspectRatio", "1:1");
+
+      formData.append(
+        "model",
+        "gpt-image-1"
+      );
+
+      formData.append(
+        "quality",
+        quality
+      );
+
+      formData.append(
+        "style",
+        "auto"
+      );
+
+      formData.append(
+        "aspectRatio",
+        "1:1"
+      );
 
       const response = await fetch(
         "/api/generate-image",
@@ -131,14 +253,20 @@ Extremely detailed.
         );
       }
 
-      if (!response.ok || !data.success) {
+      if (
+        !response.ok ||
+        !data.success
+      ) {
         throw new Error(
           data.error ||
             "Image generation failed."
         );
       }
 
-      setGeneratedImage(data.image);
+      setGeneratedImage(
+        data.image
+      );
+
       setActiveTab("image");
     } catch (error: any) {
       console.error(
@@ -177,7 +305,8 @@ Extremely detailed.
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -186,7 +315,9 @@ Extremely detailed.
         );
       }
 
-      alert("Prompt saved successfully.");
+      alert(
+        "Prompt saved successfully."
+      );
     } catch (error: any) {
       console.error(
         "Save prompt error:",
@@ -211,7 +342,9 @@ Extremely detailed.
         generatedPrompt
       );
 
-      alert("Prompt copied to clipboard.");
+      alert(
+        "Prompt copied to clipboard."
+      );
     } catch (error) {
       console.error(
         "Copy prompt error:",
@@ -222,12 +355,6 @@ Extremely detailed.
         "Unable to copy the prompt."
       );
     }
-  }
-
-  function enhancePrompt() {
-    alert(
-      "AI Prompt Enhancement will be connected next."
-    );
   }
 
   function generateVideo() {
@@ -243,15 +370,43 @@ Extremely detailed.
     template: PromptSelection
   ) {
     setSelectedTemplate(template);
-    setSubject(template.subject);
-    setStyle(template.style);
-    setCamera(template.camera);
-    setLighting(template.lighting);
-    setBackground(template.background);
-    setPose(template.pose);
-    setClothing(template.clothing);
-    setHair(template.hair);
-    setMood(template.mood);
+
+    setSubject(
+      template.subject
+    );
+
+    setStyle(
+      template.style
+    );
+
+    setCamera(
+      template.camera
+    );
+
+    setLighting(
+      template.lighting
+    );
+
+    setBackground(
+      template.background
+    );
+
+    setPose(
+      template.pose
+    );
+
+    setClothing(
+      template.clothing
+    );
+
+    setHair(
+      template.hair
+    );
+
+    setMood(
+      template.mood
+    );
+
     setNegativePrompt(
       template.negativePrompt
     );
@@ -279,11 +434,15 @@ Extremely detailed.
                 lighting={lighting}
                 setLighting={setLighting}
                 background={background}
-                setBackground={setBackground}
+                setBackground={
+                  setBackground
+                }
                 pose={pose}
                 setPose={setPose}
                 clothing={clothing}
-                setClothing={setClothing}
+                setClothing={
+                  setClothing
+                }
                 hair={hair}
                 setHair={setHair}
                 mood={mood}
@@ -332,8 +491,12 @@ Extremely detailed.
                   onEnhance={
                     enhancePrompt
                   }
-                  onSave={savePrompt}
-                  onCopy={copyPrompt}
+                  onSave={
+                    savePrompt
+                  }
+                  onCopy={
+                    copyPrompt
+                  }
                   onGenerateVideo={
                     generateVideo
                   }
@@ -359,7 +522,9 @@ Extremely detailed.
         );
 
       case "library":
-        return <LibraryWorkspace />;
+        return (
+          <LibraryWorkspace />
+        );
 
       default:
         return null;
