@@ -1,12 +1,37 @@
 import { NextResponse } from "next/server";
+
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export async function DELETE(req: Request) {
+function extractStoragePath(
+  imageUrl: string
+): string | null {
+  try {
+    const marker =
+      "/storage/v1/object/public/generated-images/";
+
+    const index = imageUrl.indexOf(marker);
+
+    if (index === -1) {
+      return null;
+    }
+
+    const path = imageUrl.substring(
+      index + marker.length
+    );
+
+    return decodeURIComponent(path);
+  } catch {
+    return null;
+  }
+}
+
+export async function DELETE(
+  req: Request
+) {
   try {
     const supabase = await createClient();
 
-    // Get the currently logged-in user
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -15,16 +40,29 @@ export async function DELETE(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "Unauthorized",
+          error:
+            "Unauthorized. Please login first.",
         },
-        {
-          status: 401,
-        }
+        { status: 401 }
       );
     }
 
-    // Read image ID from request
-    const body = await req.json();
+    let body: {
+      id?: string;
+    };
+
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid request body.",
+        },
+        { status: 400 }
+      );
+    }
+
     const imageId = body?.id;
 
     if (!imageId) {
@@ -33,35 +71,39 @@ export async function DELETE(req: Request) {
           success: false,
           error: "Image ID is required.",
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // Find the image and make sure it belongs to this user
-    const { data: image, error: imageFetchError } =
-      await supabaseAdmin
-        .from("images")
-        .select("id, user_id, image_url")
-        .eq("id", imageId)
-        .eq("user_id", user.id)
-        .single();
+    const {
+      data: image,
+      error: imageFetchError,
+    } = await supabaseAdmin
+      .from("images")
+      .select(
+        "id, user_id, image_url"
+      )
+      .eq("id", imageId)
+      .eq("user_id", user.id)
+      .single();
 
-    if (imageFetchError || !image) {
+    if (
+      imageFetchError ||
+      !image
+    ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Image not found or you are not authorised to delete it.",
+          error:
+            "Image not found or you are not authorised to delete it.",
         },
-        {
-          status: 404,
-        }
+        { status: 404 }
       );
     }
 
-    // Delete database record
-    const { error: deleteError } = await supabaseAdmin
+    const {
+      error: deleteError,
+    } = await supabaseAdmin
       .from("images")
       .delete()
       .eq("id", imageId)
@@ -78,59 +120,40 @@ export async function DELETE(req: Request) {
           success: false,
           error: "Unable to delete image.",
         },
-        {
-          status: 500,
-        }
+        { status: 500 }
       );
     }
 
-    // Try to remove the corresponding Storage file
-    try {
-      const imageUrl = image.image_url;
+    const storagePath =
+      image.image_url
+        ? extractStoragePath(
+            image.image_url
+          )
+        : null;
 
-      if (imageUrl) {
-        const marker =
-          "/storage/v1/object/public/generated-images/";
+    if (storagePath) {
+      const {
+        error: storageError,
+      } = await supabaseAdmin.storage
+        .from("generated-images")
+        .remove([storagePath]);
 
-        const markerIndex =
-          imageUrl.indexOf(marker);
-
-        if (markerIndex !== -1) {
-          const filePath = decodeURIComponent(
-            imageUrl.substring(
-              markerIndex + marker.length
-            )
-          );
-
-          if (filePath) {
-            const { error: storageError } =
-              await supabaseAdmin.storage
-                .from("generated-images")
-                .remove([filePath]);
-
-            if (storageError) {
-              console.warn(
-                "Storage image deletion warning:",
-                storageError
-              );
-            }
-          }
-        }
+      if (storageError) {
+        console.warn(
+          "Storage deletion warning:",
+          storageError
+        );
       }
-    } catch (storageError) {
-      console.warn(
-        "Unable to remove image from storage:",
-        storageError
-      );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Image deleted successfully.",
+      message:
+        "Image deleted successfully.",
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error(
-      "Delete Image Error:",
+      "Delete Image API Error:",
       error
     );
 
@@ -138,12 +161,11 @@ export async function DELETE(req: Request) {
       {
         success: false,
         error:
-          error?.message ||
-          "Something went wrong while deleting the image.",
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while deleting the image.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
