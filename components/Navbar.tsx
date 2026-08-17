@@ -1,355 +1,191 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import Logo from "./Logo";
-import { useAuth } from "./providers/AuthProvider";
+import { usePathname } from "next/navigation";
 
-export default function Navbar() {
-  const { user, loading } = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+type NavbarProps = {
+  user?: {
+    email?: string | null;
+    name?: string | null;
+  } | null;
+};
 
-  const closeMenu = () => {
-    setMobileMenuOpen(false);
-  };
+const navItems = [
+  {
+    href: "/",
+    label: "Home",
+    icon: "🏠",
+  },
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: "📊",
+  },
+  {
+    href: "/ai-assistant",
+    label: "AI Assistant",
+    icon: "🤖",
+  },
+  {
+    href: "/ai-image",
+    label: "AI Image",
+    icon: "🎨",
+  },
+  {
+    href: "/ai-video",
+    label: "AI Video",
+    icon: "🎬",
+  },
+  {
+    href: "/my-images",
+    label: "My Images",
+    icon: "🖼️",
+  },
+  {
+    href: "/my-videos",
+    label: "My Videos",
+    icon: "🎥",
+  },
+  {
+    href: "/prompt-library",
+    label: "Prompt Library",
+    icon: "📚",
+  },
+  {
+    href: "/pricing",
+    label: "Pricing",
+    icon: "💳",
+  },
+  {
+    href: "/about",
+    label: "About",
+    icon: "ℹ️",
+  },
+  {
+    href: "/contact",
+    label: "Contact",
+    icon: "📩",
+  },
+];
 
-  const username =
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
+export default function Navbar({ user }: NavbarProps) {
+  const pathname = usePathname();
+
+  const displayName =
+    user?.name ||
     user?.email?.split("@")[0] ||
-    "User";
-
-  /*
-   * DESKTOP NAVIGATION FRAME
-   */
-  const navItem =
-    "flex items-center justify-center whitespace-nowrap rounded-xl border-2 border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-200 shadow-md transition-all duration-200 hover:border-blue-400 hover:bg-slate-800 hover:text-white active:scale-105";
-
-  /*
-   * MOBILE NAVIGATION FRAME
-   */
-  const mobileItem =
-    "flex w-full items-center rounded-xl border-2 border-slate-700 bg-slate-900 px-4 py-4 font-semibold text-white transition-all duration-200 active:scale-[1.03] active:border-blue-400";
+    "Guest";
 
   return (
-    <nav className="relative z-50 w-full border-b border-white/10 bg-black">
-      <div className="mx-auto flex min-h-[96px] max-w-[1800px] items-center px-4">
+    <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 lg:px-6">
 
-        {/* LOGO */}
-        <div className="shrink-0">
-          <Logo />
-        </div>
+        {/* Logo */}
+        <Link
+          href="/"
+          className="flex shrink-0 items-center gap-2"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-lg font-bold text-white shadow-lg">
+            S
+          </div>
 
-        {/* ===================================================== */}
-        {/* DESKTOP NAVIGATION */}
-        {/* ===================================================== */}
-
-        <div className="ml-auto hidden items-center gap-2 xl:flex">
-
-          {loading ? (
-            <div className="rounded-xl border-2 border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-400">
-              Loading...
+          <div className="hidden sm:block">
+            <div className="text-lg font-bold text-white">
+              SONET
             </div>
-          ) : user ? (
-            <>
-              <Link href="/" className={navItem}>
-                Home
-              </Link>
 
-              <Link href="/dashboard" className={navItem}>
-                Dashboard
-              </Link>
+            <div className="text-[10px] font-medium tracking-[0.2em] text-cyan-400">
+              AI STUDIO
+            </div>
+          </div>
+        </Link>
 
-              <Link href="/ai-image" className={navItem}>
-                🎨 AI Image
-              </Link>
-
-              <Link href="/ai-video" className={navItem}>
-                🎬 AI Video
-              </Link>
-
-              <Link href="/my-images" className={navItem}>
-                🖼️ My Images
-              </Link>
-
-              {/* MY VIDEOS */}
-              <Link href="/my-videos" className={navItem}>
-                🎥 My Videos
-              </Link>
-
-              <Link href="/prompt-library" className={navItem}>
-                📚 Prompt Library
-              </Link>
-
-              <Link href="/pricing" className={navItem}>
-                💳 Pricing
-              </Link>
-
-              <Link href="/about" className={navItem}>
-                ℹ️ About
-              </Link>
-
-              <Link href="/contact" className={navItem}>
-                📩 Contact
-              </Link>
-
-              {/* USER FRAME */}
-              <div className="flex items-center whitespace-nowrap rounded-xl border-2 border-cyan-400 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-300 shadow-md">
-                👤 {username}
-              </div>
-
-              {/* LOGOUT FRAME */}
-              <button
-                type="button"
-                onClick={async () => {
-                  const { createClient } = await import(
-                    "@/lib/supabase/client"
+        {/* Navigation */}
+        <nav className="hidden items-center gap-1 xl:flex">
+          {navItems.map((item) => {
+            const isActive =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname === item.href ||
+                  pathname.startsWith(
+                    `${item.href}/`
                   );
 
-                  const supabase = createClient();
-
-                  await supabase.auth.signOut();
-
-                  window.location.href = "/";
-                }}
-                className="flex items-center whitespace-nowrap rounded-xl border-2 border-red-400 bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-300 shadow-md transition-all duration-200 hover:bg-red-500/20 active:scale-105"
-              >
-                🚪 Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href="/" className={navItem}>
-                Home
-              </Link>
-
-              <Link href="/pricing" className={navItem}>
-                Pricing
-              </Link>
-
-              <Link href="/about" className={navItem}>
-                About
-              </Link>
-
-              <Link href="/contact" className={navItem}>
-                Contact
-              </Link>
-
+            return (
               <Link
-                href="/login"
-                className="flex items-center justify-center whitespace-nowrap rounded-xl border-2 border-blue-500 bg-blue-500/10 px-5 py-2.5 font-semibold text-white shadow-md transition-all duration-200 hover:bg-blue-600/30 active:scale-105"
+                key={item.href}
+                href={item.href}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  isActive
+                    ? "bg-cyan-500/15 text-cyan-400"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
               >
-                Sign In
-              </Link>
+                <span className="mr-1">
+                  {item.icon}
+                </span>
 
-              <Link
-                href="/register"
-                className="flex items-center justify-center whitespace-nowrap rounded-xl border-2 border-indigo-400 bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 font-semibold text-white shadow-md transition-all duration-200 hover:brightness-110 active:scale-105"
-              >
-                Register
+                {item.label}
               </Link>
-            </>
-          )}
+            );
+          })}
+        </nav>
+
+        {/* User */}
+        <div className="flex items-center gap-3">
+          <Link
+            href="/profile"
+            className="hidden items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 transition hover:border-cyan-500 md:flex"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/20 text-sm">
+              👤
+            </span>
+
+            <span className="max-w-[120px] truncate text-sm font-medium text-white">
+              {displayName}
+            </span>
+          </Link>
+
+          <form action="/api/logout" method="POST">
+            <button
+              type="submit"
+              className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 transition hover:border-red-500 hover:bg-red-500/10 hover:text-red-300"
+            >
+              🚪 Logout
+            </button>
+          </form>
         </div>
-
-        {/* ===================================================== */}
-        {/* MOBILE MENU BUTTON */}
-        {/* ===================================================== */}
-
-        <button
-          type="button"
-          aria-label={
-            mobileMenuOpen
-              ? "Close navigation menu"
-              : "Open navigation menu"
-          }
-          aria-expanded={mobileMenuOpen}
-          onClick={() => setMobileMenuOpen((current) => !current)}
-          className="ml-auto flex h-14 w-14 items-center justify-center rounded-xl border-2 border-slate-600 bg-slate-900 text-2xl font-bold text-white shadow-lg transition-all duration-200 hover:border-blue-400 hover:bg-slate-800 active:scale-110 xl:hidden"
-        >
-          {mobileMenuOpen ? "✕" : "☰"}
-        </button>
       </div>
 
-      {/* ===================================================== */}
-      {/* MOBILE NAVIGATION */}
-      {/* ===================================================== */}
+      {/* Mobile navigation */}
+      <div className="border-t border-slate-800 xl:hidden">
+        <nav className="flex gap-1 overflow-x-auto px-4 py-2">
+          {navItems.map((item) => {
+            const isActive =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname === item.href ||
+                  pathname.startsWith(
+                    `${item.href}/`
+                  );
 
-      {mobileMenuOpen && (
-        <div className="border-t border-white/10 bg-black px-4 py-4 xl:hidden">
-          <div className="mx-auto flex max-w-[1800px] flex-col gap-3">
-
-            {loading ? (
-              <div className="rounded-xl border-2 border-slate-700 bg-slate-900 px-4 py-4 text-slate-400">
-                Loading...
-              </div>
-            ) : user ? (
-              <>
-                <Link
-                  href="/"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  🏠 Home
-                </Link>
-
-                <Link
-                  href="/dashboard"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  📊 Dashboard
-                </Link>
-
-                <Link
-                  href="/ai-image"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  🎨 AI Image
-                </Link>
-
-                <Link
-                  href="/ai-video"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  🎬 AI Video
-                </Link>
-
-                <Link
-                  href="/my-images"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  🖼️ My Images
-                </Link>
-
-                {/* MY VIDEOS */}
-                <Link
-                  href="/my-videos"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  🎥 My Videos
-                </Link>
-
-                <Link
-                  href="/prompt-library"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  📚 Prompt Library
-                </Link>
-
-                <Link
-                  href="/pricing"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  💳 Pricing
-                </Link>
-
-                <Link
-                  href="/about"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  ℹ️ About
-                </Link>
-
-                <Link
-                  href="/contact"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  📩 Contact
-                </Link>
-
-                <div className="my-1 border-t border-white/10" />
-
-                {/* USER */}
-                <div className="rounded-xl border-2 border-cyan-400 bg-cyan-500/10 px-4 py-4 font-bold text-cyan-300">
-                  👤 {username}
-                </div>
-
-                {/* LOGOUT */}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const { createClient } = await import(
-                      "@/lib/supabase/client"
-                    );
-
-                    const supabase = createClient();
-
-                    await supabase.auth.signOut();
-
-                    closeMenu();
-
-                    window.location.href = "/";
-                  }}
-                  className="w-full rounded-xl border-2 border-red-400 bg-red-500/10 px-4 py-4 text-left font-bold text-red-300 transition-all duration-200 active:scale-[1.03]"
-                >
-                  🚪 Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  🏠 Home
-                </Link>
-
-                <Link
-                  href="/pricing"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  💳 Pricing
-                </Link>
-
-                <Link
-                  href="/about"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  ℹ️ About
-                </Link>
-
-                <Link
-                  href="/contact"
-                  onClick={closeMenu}
-                  className={mobileItem}
-                >
-                  📩 Contact
-                </Link>
-
-                <div className="my-1 border-t border-white/10" />
-
-                <Link
-                  href="/login"
-                  onClick={closeMenu}
-                  className="flex w-full items-center justify-center rounded-xl border-2 border-blue-500 bg-blue-500/10 px-4 py-4 font-bold text-white transition-all duration-200 active:scale-[1.03]"
-                >
-                  Sign In
-                </Link>
-
-                <Link
-                  href="/register"
-                  onClick={closeMenu}
-                  className="flex w-full items-center justify-center rounded-xl border-2 border-indigo-400 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-4 font-bold text-white transition-all duration-200 active:scale-[1.03]"
-                >
-                  Register
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </nav>
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex shrink-0 items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  isActive
+                    ? "bg-cyan-500/15 text-cyan-400"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+    </header>
   );
 }
