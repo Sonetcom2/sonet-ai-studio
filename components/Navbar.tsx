@@ -92,9 +92,13 @@ export default function Navbar({ user }: NavbarProps) {
           onClick={closeMenu}
           className="flex shrink-0 items-center gap-2"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-lg font-bold text-white shadow-lg">
-            S
-          </div>
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-900 shadow-lg">
+  <img
+    src="/sonet-ai-studio-logo.png"
+    alt="SONET AI STUDIO"
+    className="h-full w-full object-contain"
+  />
+</div>
 
           <div>
             <div className="text-lg font-bold text-white">
