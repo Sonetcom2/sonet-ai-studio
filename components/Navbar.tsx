@@ -79,7 +79,6 @@ export default function Navbar({ user }: NavbarProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 lg:px-6">
-
         {/* Logo */}
         <Link
           href="/"
@@ -100,16 +99,14 @@ export default function Navbar({ user }: NavbarProps) {
           </div>
         </Link>
 
-        {/* Navigation */}
+        {/* Desktop Navigation */}
         <nav className="hidden items-center gap-1 xl:flex">
           {navItems.map((item) => {
             const isActive =
               item.href === "/"
                 ? pathname === "/"
                 : pathname === item.href ||
-                  pathname.startsWith(
-                    `${item.href}/`
-                  );
+                  pathname.startsWith(`${item.href}/`);
 
             return (
               <Link
@@ -131,7 +128,7 @@ export default function Navbar({ user }: NavbarProps) {
           })}
         </nav>
 
-        {/* User */}
+        {/* User Actions */}
         <div className="flex items-center gap-3">
           <Link
             href="/profile"
@@ -146,7 +143,10 @@ export default function Navbar({ user }: NavbarProps) {
             </span>
           </Link>
 
-          <form action="/api/logout" method="POST">
+          <form
+            action="/api/logout"
+            method="POST"
+          >
             <button
               type="submit"
               className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 transition hover:border-red-500 hover:bg-red-500/10 hover:text-red-300"
@@ -157,7 +157,7 @@ export default function Navbar({ user }: NavbarProps) {
         </div>
       </div>
 
-      {/* Mobile navigation */}
+      {/* Mobile Navigation */}
       <div className="border-t border-slate-800 xl:hidden">
         <nav className="flex gap-1 overflow-x-auto px-4 py-2">
           {navItems.map((item) => {
@@ -165,9 +165,7 @@ export default function Navbar({ user }: NavbarProps) {
               item.href === "/"
                 ? pathname === "/"
                 : pathname === item.href ||
-                  pathname.startsWith(
-                    `${item.href}/`
-                  );
+                  pathname.startsWith(`${item.href}/`);
 
             return (
               <Link
@@ -180,6 +178,7 @@ export default function Navbar({ user }: NavbarProps) {
                 }`}
               >
                 <span>{item.icon}</span>
+
                 <span>{item.label}</span>
               </Link>
             );
