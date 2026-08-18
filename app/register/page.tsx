@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
@@ -11,7 +12,30 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const [referralCode, setReferralCode] = useState("");
+
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(
+        window.location.search
+      );
+
+      const ref = params.get("ref");
+
+      if (ref) {
+        setReferralCode(
+          ref.trim().toUpperCase()
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Referral code detection error:",
+        error
+      );
+    }
+  }, []);
 
   async function handleSubmit(
     e: React.FormEvent<HTMLFormElement>
@@ -23,32 +47,109 @@ export default function RegisterPage() {
       return;
     }
 
-    setLoading(true);
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-      },
-    });
-
-    setLoading(false);
-
-    if (error) {
-      alert(error.message);
+    if (password.length < 6) {
+      alert(
+        "Password must be at least 6 characters long."
+      );
       return;
     }
 
-    alert(
-      "🎉 Account created successfully!\n\nPlease check your email and verify your account before signing in."
-    );
+    setLoading(true);
 
-    setFullName("");
-    setEmail("");
-    setPassword("");
+    try {
+      const signupMetadata: {
+        full_name: string;
+        referral_code?: string;
+      } = {
+        full_name: fullName.trim(),
+      };
+
+      if (referralCode) {
+        signupMetadata.referral_code =
+          referralCode;
+      }
+
+      const { data, error } =
+        await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: signupMetadata,
+          },
+        });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (!data.user) {
+        alert(
+          "Unable to create your account. Please try again."
+        );
+        return;
+      }
+
+      /*
+       * If Supabase returns a session immediately,
+       * we can process the referral now.
+       *
+       * If email confirmation is enabled and there is
+       * no session, the referral code remains safely
+       * stored in the user's auth metadata and can be
+       * processed after authentication.
+       */
+      if (referralCode && data.session) {
+        try {
+          const referralResponse = await fetch(
+            "/api/referrals/register",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                referralCode,
+              }),
+            }
+          );
+
+          if (!referralResponse.ok) {
+            console.error(
+              "Referral registration failed:",
+              await referralResponse.text()
+            );
+          }
+        } catch (referralError) {
+          console.error(
+            "Referral processing error:",
+            referralError
+          );
+        }
+      }
+
+      alert(
+        "🎉 Account created successfully!\n\nPlease check your email and verify your account before signing in."
+      );
+
+      setFullName("");
+      setEmail("");
+      setPassword("");
+      setReferralCode("");
+    } catch (error) {
+      console.error(
+        "Registration error:",
+        error
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to create your account right now."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -63,16 +164,32 @@ export default function RegisterPage() {
           Join SONET AI STUDIO
         </p>
 
+        {referralCode && (
+          <div className="mt-6 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-center">
+            <p className="text-sm text-yellow-300">
+              🎉 You were referred by a SONET
+              affiliate.
+            </p>
+
+            <p className="mt-1 text-xs font-semibold text-yellow-400">
+              Referral: {referralCode}
+            </p>
+          </div>
+        )}
+
         <form
           onSubmit={handleSubmit}
           className="mt-8 space-y-5"
         >
-
           <input
             type="text"
             placeholder="Full Name"
             value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
+            onChange={(e) =>
+              setFullName(e.target.value)
+            }
+            autoComplete="name"
+            required
             className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 text-white outline-none focus:border-cyan-500"
           />
 
@@ -80,7 +197,11 @@ export default function RegisterPage() {
             type="email"
             placeholder="Email Address"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
+            autoComplete="email"
+            required
             className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 text-white outline-none focus:border-cyan-500"
           />
 
@@ -88,7 +209,12 @@ export default function RegisterPage() {
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
+            autoComplete="new-password"
+            minLength={6}
+            required
             className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 text-white outline-none focus:border-cyan-500"
           />
 
@@ -97,13 +223,13 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 font-bold text-white transition hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Creating Account..." : "Create Account"}
+            {loading
+              ? "Creating Account..."
+              : "Create Account"}
           </button>
-
         </form>
 
         <div className="mt-8 text-center">
-
           <p className="text-gray-400">
             Already have an account?
           </p>
@@ -114,9 +240,7 @@ export default function RegisterPage() {
           >
             Sign In
           </Link>
-
         </div>
-
       </div>
     </main>
   );
