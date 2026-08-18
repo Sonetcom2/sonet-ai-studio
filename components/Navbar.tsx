@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -51,6 +52,16 @@ const navItems = [
     href: "/prompt-library",
     label: "Prompt Library",
     icon: "📚",
+  },
+  {
+    href: "/prompt-builder",
+    label: "Prompt Engineer",
+    icon: "✨",
+  },
+  {
+    href: "/affiliate",
+    label: "Affiliate Program",
+    icon: "💰",
   },
   {
     href: "/pricing",
