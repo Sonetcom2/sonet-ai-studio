@@ -1,7 +1,54 @@
 
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 export default function AffiliatePage() {
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    async function checkAuthentication() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        setIsLoggedIn(Boolean(user));
+      } catch (error) {
+        console.error(
+          "Affiliate authentication check error:",
+          error
+        );
+
+        setIsLoggedIn(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+
+    checkAuthentication();
+  }, [supabase]);
+
+  function handleAffiliateJoin() {
+    if (checkingAuth) return;
+
+    if (isLoggedIn) {
+      router.push("/affiliate/dashboard");
+      return;
+    }
+
+    router.push(
+      "/login?redirect=/affiliate/dashboard"
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-black to-indigo-950 text-white">
       {/* Hero */}
@@ -29,12 +76,18 @@ export default function AffiliatePage() {
           </p>
 
           <div className="mt-10 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/register"
-              className="rounded-xl bg-yellow-500 px-8 py-4 font-bold text-black shadow-xl transition hover:scale-105 hover:bg-yellow-400"
+            <button
+              type="button"
+              onClick={handleAffiliateJoin}
+              disabled={checkingAuth}
+              className="rounded-xl bg-yellow-500 px-8 py-4 font-bold text-black shadow-xl transition hover:scale-105 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              🚀 Join the Affiliate Program
-            </Link>
+              {checkingAuth
+                ? "Checking Account..."
+                : isLoggedIn
+                ? "🚀 Open Affiliate Dashboard"
+                : "🚀 Join the Affiliate Program"}
+            </button>
 
             <Link
               href="/"
@@ -231,12 +284,18 @@ export default function AffiliatePage() {
             through referrals.
           </p>
 
-          <Link
-            href="/register"
-            className="mt-8 inline-flex rounded-xl bg-yellow-500 px-8 py-4 font-bold text-black transition hover:scale-105 hover:bg-yellow-400"
+          <button
+            type="button"
+            onClick={handleAffiliateJoin}
+            disabled={checkingAuth}
+            className="mt-8 inline-flex rounded-xl bg-yellow-500 px-8 py-4 font-bold text-black transition hover:scale-105 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            💰 Get Started
-          </Link>
+            {checkingAuth
+              ? "Checking Account..."
+              : isLoggedIn
+              ? "🚀 Open Affiliate Dashboard"
+              : "💰 Get Started"}
+          </button>
         </div>
       </section>
     </main>

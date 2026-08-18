@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function LoginPage() {
+function LoginForm() {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,28 +26,53 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-  email,
-  password,
-});
+    try {
+      const { data, error } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
-alert("USER:\n" + JSON.stringify(data.user, null, 2));
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-alert("SESSION:\n" + JSON.stringify(data.session, null, 2));
+      if (!data.user || !data.session) {
+        alert(
+          "Unable to create a session. Please try again."
+        );
+        return;
+      }
 
-alert("ERROR:\n" + JSON.stringify(error, null, 2));
+      /*
+       * Affiliate dashboard redirect
+       *
+       * When the user came from the affiliate page,
+       * send them directly to the affiliate dashboard
+       * after successful authentication.
+       */
+      const redirect =
+        searchParams.get("redirect");
 
-    setLoading(false);
+      if (redirect === "affiliate") {
+        router.push("/affiliate/dashboard");
+      } else {
+        router.push("/dashboard");
+      }
 
-    if (error) {
-      alert(error.message);
-      return;
+      router.refresh();
+    } catch (error) {
+      console.error("Login error:", error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to sign in right now."
+      );
+    } finally {
+      setLoading(false);
     }
-
-    alert("🎉 Welcome back!");
-
-    router.push("/dashboard");
-    router.refresh();
   }
 
   return (
@@ -72,6 +98,8 @@ alert("ERROR:\n" + JSON.stringify(error, null, 2));
             onChange={(e) =>
               setEmail(e.target.value)
             }
+            autoComplete="email"
+            required
             className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 text-white outline-none focus:border-cyan-500"
           />
 
@@ -82,6 +110,8 @@ alert("ERROR:\n" + JSON.stringify(error, null, 2));
             onChange={(e) =>
               setPassword(e.target.value)
             }
+            autoComplete="current-password"
+            required
             className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 text-white outline-none focus:border-cyan-500"
           />
 
@@ -90,7 +120,9 @@ alert("ERROR:\n" + JSON.stringify(error, null, 2));
             disabled={loading}
             className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 font-bold text-white transition hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Signing In..." : "Sign In"}
+            {loading
+              ? "Signing In..."
+              : "Sign In"}
           </button>
         </form>
 
@@ -109,5 +141,24 @@ alert("ERROR:\n" + JSON.stringify(error, null, 2));
 
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-black flex items-center justify-center px-6">
+          <div className="text-center text-white">
+            <div className="text-3xl">⚡</div>
+            <p className="mt-3 text-gray-400">
+              Loading...
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
