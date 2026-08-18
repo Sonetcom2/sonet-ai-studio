@@ -1,11 +1,21 @@
-import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function getAllUsers() {
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("*")
+    .select(
+      `
+      id,
+      full_name,
+      email,
+      credits,
+      plan,
+      role,
+      status,
+      last_login,
+      created_at
+      `
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -23,31 +33,39 @@ export async function getAllUsers() {
   }
 
   const users = (data ?? []).map((user) => ({
-  id: user.id,
-  fullName: user.full_name ?? "",
-  email: user.email ?? "",
-  plan: user.plan ?? "FREE",
-  credits: user.credits ?? 0,
-  createdAt: user.created_at ?? "",
-  status: user.status ?? "ACTIVE",
-  role: user.role ?? "USER",
-  lastLogin: user.last_login,
-}));
+    id: user.id,
+    fullName: user.full_name ?? "",
+    email: user.email ?? "",
+    plan: user.plan ?? "FREE",
+    credits: user.credits ?? 0,
+    createdAt: user.created_at ?? "",
+    status: user.status ?? "ACTIVE",
+    role: user.role ?? "USER",
+    lastLogin: user.last_login ?? null,
+  }));
+
   const stats = {
     totalUsers: users.length,
 
     activeUsers: users.filter(
-      (user) => user.status !== "suspended"
+      (user) =>
+        user.status?.toUpperCase() === "ACTIVE"
     ).length,
 
     suspendedUsers: users.filter(
-      (user) => user.status === "suspended"
+      (user) =>
+        user.status?.toUpperCase() === "SUSPENDED"
     ).length,
 
     premiumUsers: users.filter(
-      (user) =>
-        user.plan === "premium" ||
-        user.plan === "pro"
+      (user) => {
+        const plan = user.plan?.toUpperCase();
+
+        return (
+          plan === "PREMIUM" ||
+          plan === "PRO"
+        );
+      }
     ).length,
   };
 

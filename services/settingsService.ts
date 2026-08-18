@@ -1,3 +1,4 @@
+
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export type SiteSettings = {
@@ -10,6 +11,7 @@ export type SiteSettings = {
   premium_price: number;
   image_generation_cost: number;
   video_generation_cost: number;
+  assistant_generation_cost: number;
   created_at: string;
   updated_at: string;
 };
@@ -25,6 +27,7 @@ type SettingsUpdate = Partial<
     | "premium_price"
     | "image_generation_cost"
     | "video_generation_cost"
+    | "assistant_generation_cost"
   >
 >;
 
@@ -46,7 +49,6 @@ export async function getSettings(): Promise<SiteSettings> {
 export async function updateSettings(
   settings: SettingsUpdate
 ): Promise<SiteSettings> {
-  // First get the existing settings row.
   const current = await getSettings();
 
   const { data, error } = await supabaseAdmin

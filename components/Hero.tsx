@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 
 export default function Hero() {
@@ -19,13 +20,24 @@ export default function Hero() {
           Making Life Lite
         </p>
 
-        <p className="mt-8 max-w-3xl mx-auto text-xl text-gray-300 leading-relaxed">
-          Welcome to the Future of AI Creativity.
+        <p className="mt-8 max-w-4xl mx-auto text-xl text-gray-300 leading-relaxed">
+          Welcome to the future of AI creativity and business.
           Create stunning AI images, cinematic AI videos,
-          and professional prompts—all in one intelligent platform.
+          powerful prompts, and professional content.
+          Chat with SONET AI Assistant, grow your business,
+          and unlock new opportunities with AI—all in one
+          intelligent platform.
         </p>
 
-        <div className="mt-12 flex flex-wrap justify-center gap-6">
+        {/* Primary Actions */}
+        <div className="mt-12 flex flex-wrap justify-center gap-5">
+
+          <Link
+            href="/ai-assistant"
+            className="bg-cyan-600 hover:bg-cyan-500 hover:scale-105 duration-300 transition px-8 py-4 rounded-xl font-semibold shadow-xl"
+          >
+            🤖 SONET AI Assistant
+          </Link>
 
           <Link
             href="/ai-image"
@@ -41,14 +53,38 @@ export default function Hero() {
             🎬 AI Video Generator
           </Link>
 
+        </div>
+
+        {/* Secondary Actions */}
+        <div className="mt-5 flex flex-wrap justify-center gap-5">
+
           <Link
             href="/prompt-library"
-            className="bg-green-600 hover:bg-green-700 hover:scale-105 duration-300 transition px-8 py-4 rounded-xl font-semibold shadow-xl"
+            className="bg-green-600 hover:bg-green-500 hover:scale-105 duration-300 transition px-7 py-3 rounded-xl font-semibold shadow-lg"
           >
             📚 Prompt Library
           </Link>
 
+          <Link
+            href="/prompt-builder"
+            className="bg-indigo-600 hover:bg-indigo-500 hover:scale-105 duration-300 transition px-7 py-3 rounded-xl font-semibold shadow-lg"
+          >
+            ✨ Prompt Engineer
+          </Link>
+
+          <Link
+            href="/affiliate"
+            className="border border-yellow-500/60 bg-yellow-500/10 hover:bg-yellow-500/20 hover:scale-105 duration-300 transition px-7 py-3 rounded-xl font-semibold text-yellow-300 shadow-lg"
+          >
+            💰 Affiliate Program
+          </Link>
+
         </div>
+
+        {/* Supporting Message */}
+        <p className="mt-8 text-sm text-gray-400">
+          Create smarter. Work faster. Grow with AI.
+        </p>
 
       </div>
 

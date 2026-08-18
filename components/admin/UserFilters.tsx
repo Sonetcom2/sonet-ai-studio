@@ -1,29 +1,75 @@
 "use client";
 
-export default function UserFilters() {
+type Filter =
+  | "ALL"
+  | "FREE"
+  | "PRO"
+  | "PREMIUM"
+  | "ACTIVE"
+  | "SUSPENDED";
+
+type Props = {
+  activeFilter: Filter;
+  onFilterChange: (filter: Filter) => void;
+};
+
+const filters: {
+  label: string;
+  value: Filter;
+}[] = [
+  {
+    label: "All",
+    value: "ALL",
+  },
+  {
+    label: "Free",
+    value: "FREE",
+  },
+  {
+    label: "Pro",
+    value: "PRO",
+  },
+  {
+    label: "Premium",
+    value: "PREMIUM",
+  },
+  {
+    label: "Active",
+    value: "ACTIVE",
+  },
+  {
+    label: "Suspended",
+    value: "SUSPENDED",
+  },
+];
+
+export default function UserFilters({
+  activeFilter,
+  onFilterChange,
+}: Props) {
   return (
     <div className="flex flex-wrap gap-3">
+      {filters.map((item) => {
+        const active =
+          activeFilter === item.value;
 
-      <button className="rounded-xl bg-cyan-600 px-5 py-2 text-white">
-        All
-      </button>
-
-      <button className="rounded-xl bg-slate-800 px-5 py-2 text-slate-300 hover:bg-slate-700">
-        Free
-      </button>
-
-      <button className="rounded-xl bg-slate-800 px-5 py-2 text-slate-300 hover:bg-slate-700">
-        Pro
-      </button>
-
-      <button className="rounded-xl bg-slate-800 px-5 py-2 text-slate-300 hover:bg-slate-700">
-        Premium
-      </button>
-
-      <button className="rounded-xl bg-slate-800 px-5 py-2 text-slate-300 hover:bg-slate-700">
-        Suspended
-      </button>
-
+        return (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() =>
+              onFilterChange(item.value)
+            }
+            className={`rounded-xl px-5 py-2 font-medium transition ${
+              active
+                ? "bg-cyan-600 text-white"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            {item.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
