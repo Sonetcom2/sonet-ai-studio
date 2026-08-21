@@ -1,11 +1,16 @@
 
+export const dynamic = "force-dynamic";
+
 import AdminLayout from "@/components/admin/AdminLayout";
+import { requireAdmin } from "@/lib/auth/requireAdmin";
 import {
   getAdminSubscriptions,
   getSubscriptionStats,
 } from "@/services/adminSubscriptionService";
 
 export default async function AdminSubscriptionsPage() {
+  await requireAdmin();
+
   const users = await getAdminSubscriptions();
   const stats = getSubscriptionStats(users);
 
@@ -15,7 +20,11 @@ export default async function AdminSubscriptionsPage() {
 
         {/* Header */}
         <div>
-          <h1 className="text-4xl font-bold text-white">
+          <p className="text-sm font-semibold uppercase tracking-widest text-cyan-400">
+            SONET AI STUDIO
+          </p>
+
+          <h1 className="mt-2 text-4xl font-black text-white">
             Subscriptions
           </h1>
 
@@ -27,55 +36,67 @@ export default async function AdminSubscriptionsPage() {
         {/* Statistics */}
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
 
+          {/* Total */}
           <div className="rounded-2xl border border-slate-700 bg-slate-900 p-5">
             <p className="text-sm text-slate-400">
               Total
             </p>
+
             <p className="mt-2 text-3xl font-bold text-white">
               {stats.total}
             </p>
           </div>
 
+          {/* Free */}
           <div className="rounded-2xl border border-slate-700 bg-slate-900 p-5">
             <p className="text-sm text-slate-400">
               Free
             </p>
+
             <p className="mt-2 text-3xl font-bold text-white">
               {stats.free}
             </p>
           </div>
 
+          {/* Pro */}
           <div className="rounded-2xl border border-blue-500/30 bg-blue-950/30 p-5">
             <p className="text-sm text-blue-300">
               Pro
             </p>
+
             <p className="mt-2 text-3xl font-bold text-blue-400">
               {stats.pro}
             </p>
           </div>
 
+          {/* Premium */}
           <div className="rounded-2xl border border-purple-500/30 bg-purple-950/30 p-5">
             <p className="text-sm text-purple-300">
               Premium
             </p>
+
             <p className="mt-2 text-3xl font-bold text-purple-400">
               {stats.premium}
             </p>
           </div>
 
+          {/* Active */}
           <div className="rounded-2xl border border-green-500/30 bg-green-950/30 p-5">
             <p className="text-sm text-green-300">
               Active
             </p>
+
             <p className="mt-2 text-3xl font-bold text-green-400">
               {stats.active}
             </p>
           </div>
 
+          {/* Suspended */}
           <div className="rounded-2xl border border-red-500/30 bg-red-950/30 p-5">
             <p className="text-sm text-red-300">
               Suspended
             </p>
+
             <p className="mt-2 text-3xl font-bold text-red-400">
               {stats.suspended}
             </p>
@@ -84,7 +105,7 @@ export default async function AdminSubscriptionsPage() {
         </div>
 
         {/* Subscription Table */}
-        <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <section className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
 
           <div className="border-b border-slate-700 px-6 py-5">
             <h2 className="text-xl font-bold text-white">
@@ -145,10 +166,10 @@ export default async function AdminSubscriptionsPage() {
                   users.map((user) => {
 
                     const plan =
-                      user.plan.toUpperCase();
+                      String(user.plan || "free").toUpperCase();
 
                     const status =
-                      user.status.toUpperCase();
+                      String(user.status || "active").toUpperCase();
 
                     return (
                       <tr
@@ -156,6 +177,7 @@ export default async function AdminSubscriptionsPage() {
                         className="transition hover:bg-slate-800/40"
                       >
 
+                        {/* User */}
                         <td className="px-6 py-5">
 
                           <div className="font-semibold text-white">
@@ -163,11 +185,12 @@ export default async function AdminSubscriptionsPage() {
                           </div>
 
                           <div className="mt-1 text-sm text-slate-500">
-                            {user.email}
+                            {user.email || "No email"}
                           </div>
 
                         </td>
 
+                        {/* Plan */}
                         <td className="px-6 py-5">
 
                           <span
@@ -184,17 +207,21 @@ export default async function AdminSubscriptionsPage() {
 
                         </td>
 
+                        {/* Credits */}
                         <td className="px-6 py-5 font-semibold text-white">
-                          {user.credits.toLocaleString()}
+                          {Number(user.credits || 0).toLocaleString()}
                         </td>
 
+                        {/* Status */}
                         <td className="px-6 py-5">
 
                           <span
                             className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
                               status === "ACTIVE"
                                 ? "bg-green-500/15 text-green-400"
-                                : "bg-red-500/15 text-red-400"
+                                : status === "SUSPENDED"
+                                ? "bg-red-500/15 text-red-400"
+                                : "bg-yellow-500/15 text-yellow-400"
                             }`}
                           >
                             {status}
@@ -202,15 +229,21 @@ export default async function AdminSubscriptionsPage() {
 
                         </td>
 
+                        {/* Role */}
                         <td className="px-6 py-5 text-slate-300">
-                          {user.role}
+                          {user.role || "USER"}
                         </td>
 
+                        {/* Created */}
                         <td className="px-6 py-5 text-sm text-slate-400">
                           {user.createdAt
                             ? new Date(
                                 user.createdAt
-                              ).toLocaleDateString()
+                              ).toLocaleDateString("en-NG", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })
                             : "—"}
                         </td>
 
@@ -224,7 +257,7 @@ export default async function AdminSubscriptionsPage() {
             </table>
 
           </div>
-        </div>
+        </section>
 
       </div>
     </AdminLayout>

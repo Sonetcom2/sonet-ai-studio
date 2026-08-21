@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -17,7 +18,7 @@ const menuItems = [
   {
     title: "Images",
     href: "/admin/images",
-    icon: "🖼",
+    icon: "🖼️",
   },
   {
     title: "Videos",
@@ -28,6 +29,11 @@ const menuItems = [
     title: "Payments",
     href: "/admin/payments",
     icon: "💳",
+  },
+  {
+    title: "Withdrawals",
+    href: "/admin/withdrawals",
+    icon: "💸",
   },
   {
     title: "Subscriptions",
@@ -57,8 +63,8 @@ export default function AdminSidebar() {
   return (
     <aside className="flex h-screen w-72 flex-col border-r border-slate-800 bg-slate-950">
 
+      {/* Header */}
       <div className="border-b border-slate-800 p-8">
-
         <h1 className="text-2xl font-black text-white">
           👑 SONET AI
         </h1>
@@ -66,14 +72,14 @@ export default function AdminSidebar() {
         <p className="mt-2 text-sm text-slate-400">
           Admin Control Panel
         </p>
-
       </div>
 
-      <nav className="flex-1 space-y-2 p-5">
-
+      {/* Navigation */}
+      <nav className="flex-1 space-y-2 overflow-y-auto p-5">
         {menuItems.map((item) => {
-
-          const active = pathname === item.href;
+          const active =
+            pathname === item.href ||
+            pathname.startsWith(`${item.href}/`);
 
           return (
             <Link
@@ -95,13 +101,11 @@ export default function AdminSidebar() {
             </Link>
           );
         })}
-
       </nav>
 
+      {/* Platform Information */}
       <div className="border-t border-slate-800 p-5">
-
         <div className="rounded-2xl bg-slate-900 p-4">
-
           <p className="text-sm text-slate-400">
             Platform
           </p>
@@ -113,9 +117,7 @@ export default function AdminSidebar() {
           <p className="mt-1 text-xs text-slate-500">
             Admin Version 1.0
           </p>
-
         </div>
-
       </div>
 
     </aside>

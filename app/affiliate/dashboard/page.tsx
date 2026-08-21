@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -47,6 +48,13 @@ type DashboardResponse = {
   commissions?: Commission[];
 };
 
+type WithdrawalForm = {
+  amount: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+};
+
 function formatMoney(amount: number, currency = "NGN") {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -71,6 +79,21 @@ export default function AffiliateDashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [copying, setCopying] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  const [withdrawalMessage, setWithdrawalMessage] =
+    useState("");
+
+  const [withdrawalError, setWithdrawalError] =
+    useState("");
+
+  const [withdrawalForm, setWithdrawalForm] =
+    useState<WithdrawalForm>({
+      amount: "",
+      bankName: "",
+      accountName: "",
+      accountNumber: "",
+    });
 
   async function loadDashboard() {
     try {
@@ -141,6 +164,137 @@ export default function AffiliateDashboardPage() {
       );
     } finally {
       setCopying(false);
+    }
+  }
+
+  async function submitWithdrawal(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!data?.affiliate) return;
+
+    setWithdrawing(true);
+    setWithdrawalMessage("");
+    setWithdrawalError("");
+
+    const amount = Number(
+      withdrawalForm.amount
+    );
+
+    if (!Number.isFinite(amount)) {
+      setWithdrawalError(
+        "Please enter a valid withdrawal amount."
+      );
+      setWithdrawing(false);
+      return;
+    }
+
+    if (amount < 1000) {
+      setWithdrawalError(
+        "Minimum withdrawal amount is ₦1,000."
+      );
+      setWithdrawing(false);
+      return;
+    }
+
+    if (!Number.isInteger(amount)) {
+      setWithdrawalError(
+        "Withdrawal amount must be a whole number."
+      );
+      setWithdrawing(false);
+      return;
+    }
+
+    if (
+      amount >
+      data.affiliate.pendingEarnings
+    ) {
+      setWithdrawalError(
+        "The withdrawal amount is greater than your available earnings."
+      );
+      setWithdrawing(false);
+      return;
+    }
+
+    if (
+      !withdrawalForm.bankName.trim() ||
+      !withdrawalForm.accountName.trim() ||
+      !withdrawalForm.accountNumber.trim()
+    ) {
+      setWithdrawalError(
+        "Please complete all bank details."
+      );
+      setWithdrawing(false);
+      return;
+    }
+
+    if (
+      !/^\d{10}$/.test(
+        withdrawalForm.accountNumber.trim()
+      )
+    ) {
+      setWithdrawalError(
+        "Account number must contain exactly 10 digits."
+      );
+      setWithdrawing(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        "/api/affiliate/withdrawal",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount,
+            bankName:
+              withdrawalForm.bankName.trim(),
+            accountName:
+              withdrawalForm.accountName.trim(),
+            accountNumber:
+              withdrawalForm.accountNumber.trim(),
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error ||
+            "Unable to submit withdrawal request."
+        );
+      }
+
+      setWithdrawalMessage(
+        `Withdrawal request submitted successfully. Reference: ${result.withdrawal.reference}`
+      );
+
+      setWithdrawalForm({
+        amount: "",
+        bankName: "",
+        accountName: "",
+        accountNumber: "",
+      });
+
+      await loadDashboard();
+    } catch (error) {
+      console.error(
+        "Withdrawal request error:",
+        error
+      );
+
+      setWithdrawalError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit withdrawal request."
+      );
+    } finally {
+      setWithdrawing(false);
     }
   }
 
@@ -229,56 +383,45 @@ export default function AffiliateDashboardPage() {
             href="/affiliate"
             className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-center font-semibold text-gray-200 transition hover:border-cyan-500 hover:text-cyan-400"
           >
-            ← Affiliate Home
+            ← Affiliate Program
           </Link>
         </div>
 
         {/* Referral Link */}
-        <section className="mb-8 rounded-3xl border border-cyan-500/30 bg-slate-900/70 p-6 shadow-2xl backdrop-blur-md">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <section className="mb-8 rounded-3xl border border-cyan-500/20 bg-slate-900/70 p-6 shadow-2xl">
+          <h2 className="text-xl font-bold">
+            Your Referral Link
+          </h2>
 
-            <div>
-              <p className="text-sm font-semibold text-cyan-400">
-                YOUR REFERRAL CODE
-              </p>
+          <p className="mt-1 text-sm text-gray-400">
+            Share this link to earn commissions when your referrals make qualifying payments.
+          </p>
 
-              <div className="mt-2 text-3xl font-black tracking-wider">
-                {affiliate.referralCode}
-              </div>
+          <div className="mt-5 flex flex-col gap-3 md:flex-row">
+            <input
+              value={referralLink}
+              readOnly
+              className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-gray-300 outline-none"
+            />
 
-              <p className="mt-2 text-sm text-gray-400">
-                Commission rate:{" "}
-                <span className="font-bold text-white">
-                  {affiliate.commissionRate}%
-                </span>
-              </p>
-            </div>
-
-            <div className="w-full lg:max-w-xl">
-              <label className="mb-2 block text-sm text-gray-400">
-                Your referral link
-              </label>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  readOnly
-                  value={referralLink}
-                  className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-gray-300 outline-none"
-                />
-
-                <button
-                  onClick={copyReferralLink}
-                  disabled={copying}
-                  className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 font-bold transition hover:scale-[1.02] disabled:opacity-50"
-                >
-                  {copying
-                    ? "Copying..."
-                    : "Copy Link"}
-                </button>
-              </div>
-            </div>
-
+            <button
+              type="button"
+              onClick={copyReferralLink}
+              disabled={copying}
+              className="rounded-xl bg-cyan-500 px-6 py-3 font-bold text-white transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {copying
+                ? "Copying..."
+                : "Copy Link"}
+            </button>
           </div>
+
+          <p className="mt-3 text-sm text-gray-500">
+            Referral Code:{" "}
+            <span className="font-bold text-cyan-400">
+              {affiliate.referralCode}
+            </span>
+          </p>
         </section>
 
         {/* Statistics */}
@@ -316,7 +459,7 @@ export default function AffiliateDashboardPage() {
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
             <p className="text-sm text-gray-400">
-              Pending Earnings
+              Available for Withdrawal
             </p>
 
             <p className="mt-3 text-3xl font-black text-yellow-400">
@@ -355,6 +498,158 @@ export default function AffiliateDashboardPage() {
 
         </section>
 
+        {/* Withdrawal */}
+        <section className="mb-8 rounded-3xl border border-green-500/20 bg-slate-900/70 p-6 shadow-2xl">
+          <div className="mb-6">
+            <p className="text-sm font-semibold uppercase tracking-widest text-green-400">
+              Affiliate Payout
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black">
+              Withdraw Earnings
+            </h2>
+
+            <p className="mt-2 text-sm text-gray-400">
+              Request a payout directly to your Nigerian bank account.
+              Minimum withdrawal is ₦1,000.
+            </p>
+          </div>
+
+          <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
+            <p className="text-sm text-gray-400">
+              Available Balance
+            </p>
+
+            <p className="mt-2 text-3xl font-black text-green-400">
+              {formatMoney(
+                affiliate.pendingEarnings
+              )}
+            </p>
+          </div>
+
+          {withdrawalMessage && (
+            <div className="mb-5 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
+              {withdrawalMessage}
+            </div>
+          )}
+
+          {withdrawalError && (
+            <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+              {withdrawalError}
+            </div>
+          )}
+
+          <form
+            onSubmit={submitWithdrawal}
+            className="grid gap-5 md:grid-cols-2"
+          >
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-300">
+                Withdrawal Amount
+              </label>
+
+              <input
+                type="number"
+                min="1000"
+                step="1"
+                value={withdrawalForm.amount}
+                onChange={(event) =>
+                  setWithdrawalForm((current) => ({
+                    ...current,
+                    amount: event.target.value,
+                  }))
+                }
+                placeholder="1000"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-green-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-300">
+                Bank Name
+              </label>
+
+              <input
+                type="text"
+                value={withdrawalForm.bankName}
+                onChange={(event) =>
+                  setWithdrawalForm((current) => ({
+                    ...current,
+                    bankName: event.target.value,
+                  }))
+                }
+                placeholder="e.g. GTBank"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-green-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-300">
+                Account Name
+              </label>
+
+              <input
+                type="text"
+                value={withdrawalForm.accountName}
+                onChange={(event) =>
+                  setWithdrawalForm((current) => ({
+                    ...current,
+                    accountName: event.target.value,
+                  }))
+                }
+                placeholder="Account holder name"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-green-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-300">
+                Account Number
+              </label>
+
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={10}
+                value={withdrawalForm.accountNumber}
+                onChange={(event) =>
+                  setWithdrawalForm((current) => ({
+                    ...current,
+                    accountNumber:
+                      event.target.value.replace(
+                        /\D/g,
+                        ""
+                      ),
+                  }))
+                }
+                placeholder="10-digit account number"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-green-500"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <button
+                type="submit"
+                disabled={
+                  withdrawing ||
+                  affiliate.pendingEarnings < 1000
+                }
+                className="w-full rounded-xl bg-green-500 px-6 py-4 font-black text-white transition hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {withdrawing
+                  ? "Submitting Withdrawal..."
+                  : affiliate.pendingEarnings < 1000
+                    ? "Minimum ₦1,000 Required"
+                    : "Request Withdrawal"}
+              </button>
+            </div>
+          </form>
+
+          <p className="mt-4 text-xs text-gray-500">
+            Your withdrawal request will be reviewed and processed by SONET AI STUDIO administration.
+          </p>
+        </section>
+
         {/* Referrals */}
         <section className="mb-8 rounded-3xl border border-slate-800 bg-slate-900/70 shadow-2xl">
           <div className="border-b border-slate-800 p-6">
@@ -381,15 +676,12 @@ export default function AffiliateDashboardPage() {
                     <th className="px-6 py-4">
                       Referral Code
                     </th>
-
                     <th className="px-6 py-4">
                       Status
                     </th>
-
                     <th className="px-6 py-4">
                       Registered
                     </th>
-
                     <th className="px-6 py-4">
                       Converted
                     </th>
@@ -455,23 +747,18 @@ export default function AffiliateDashboardPage() {
                     <th className="px-6 py-4">
                       Plan
                     </th>
-
                     <th className="px-6 py-4">
                       Payment
                     </th>
-
                     <th className="px-6 py-4">
                       Rate
                     </th>
-
                     <th className="px-6 py-4">
                       Commission
                     </th>
-
                     <th className="px-6 py-4">
                       Status
                     </th>
-
                     <th className="px-6 py-4">
                       Date
                     </th>
