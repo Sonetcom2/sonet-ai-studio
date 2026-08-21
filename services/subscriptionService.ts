@@ -1,21 +1,26 @@
-export function getPlanDetails(plan: string) {
-  switch (plan) {
+
+import { getSettings } from "@/services/settingsService";
+
+export async function getPlanDetails(plan: string) {
+  const settings = await getSettings();
+
+  switch (plan.toUpperCase()) {
     case "PRO":
       return {
         plan: "PRO",
-        credits: 1000,
+        credits: settings.pro_credits,
       };
 
     case "PREMIUM":
       return {
         plan: "PREMIUM",
-        credits: 999999,
+        credits: settings.premium_credits,
       };
 
     default:
       return {
         plan: "FREE",
-        credits: 100,
+        credits: settings.free_credits,
       };
   }
 }

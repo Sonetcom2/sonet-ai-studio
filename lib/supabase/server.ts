@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -13,9 +15,19 @@ export async function createClient() {
           return cookieStore.getAll();
         },
 
-        // Do NOT set cookies here.
-        // Cookies can only be modified in Route Handlers or Middleware.
-        setAll() {},
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(
+              ({ name, value, options }) => {
+                cookieStore.set(name, value, options);
+              }
+            );
+          } catch {
+            // Cookie writes may not be available in
+            // Server Components. Middleware handles
+            // session refresh when necessary.
+          }
+        },
       },
     }
   );

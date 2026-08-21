@@ -5,13 +5,19 @@ export type SiteSettings = {
   id: string;
   site_name: string;
   maintenance_mode: boolean;
+
   free_credits: number;
+
   pro_price: number;
   pro_credits: number;
+
   premium_price: number;
+  premium_credits: number;
+
   image_generation_cost: number;
   video_generation_cost: number;
   assistant_generation_cost: number;
+
   created_at: string;
   updated_at: string;
 };
@@ -25,6 +31,7 @@ type SettingsUpdate = Partial<
     | "pro_price"
     | "pro_credits"
     | "premium_price"
+    | "premium_credits"
     | "image_generation_cost"
     | "video_generation_cost"
     | "assistant_generation_cost"
