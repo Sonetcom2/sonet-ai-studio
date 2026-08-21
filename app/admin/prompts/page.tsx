@@ -1,33 +1,52 @@
-export default function AdminPromptsPage() {
-  return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-7xl">
+import AdminLayout from "@/components/admin/AdminLayout";
+import PromptManagement from "@/components/admin/PromptManagement";
+import {
+  getAdminPrompts,
+  AdminPrompt,
+} from "@/services/adminPromptService";
 
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold">
-            ✨ Prompt Management
-          </h1>
+export default async function AdminPromptsPage() {
+let prompts: AdminPrompt[] = [];
+let error = "";
+try {
+prompts = await getAdminPrompts();
+} catch (err) {
+console.error(
+"Admin Prompts Page Error:",
+err
+);
 
-          <p className="mt-2 text-slate-400">
-            Manage prompts and prompt activity on SONET AI STUDIO.
-          </p>
-        </div>
 
-        <div className="rounded-3xl border border-slate-700 bg-slate-900 p-10 shadow-2xl">
-          <div className="text-center">
-            <div className="mb-4 text-6xl">📝</div>
+error =
+  "Unable to load the prompt library.";
 
-            <h2 className="text-2xl font-bold">
-              Prompt Management
-            </h2>
 
-            <p className="mt-3 text-slate-400">
-              Prompt management will be connected here.
-            </p>
-          </div>
-        </div>
+}
 
+return ( <AdminLayout> <div className="space-y-8">
+
+
+    <div>
+      <h1 className="text-4xl font-bold text-white">
+        ✨ Prompt Management
+      </h1>
+
+      <p className="mt-3 text-slate-400">
+        Manage saved prompts created by SONET AI STUDIO users.
+      </p>
+    </div>
+
+    {error && (
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5 text-red-300">
+        {error}
       </div>
-    </main>
-  );
+    )}
+
+    <PromptManagement prompts={prompts} />
+
+  </div>
+</AdminLayout>
+
+
+);
 }

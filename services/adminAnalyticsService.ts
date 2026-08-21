@@ -1,30 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
+
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { requireAdmin } from "@/lib/auth/requireAdmin";
 
 export async function getAdminAnalytics() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthorized.");
-  }
-
-  const { data: profile, error: profileError } =
-    await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-  if (
-    profileError ||
-    !profile ||
-    profile.role !== "ADMIN"
-  ) {
-    throw new Error("Forbidden.");
-  }
+  // Verify that the current user is an administrator.
+  await requireAdmin();
 
   const [
     usersResult,
@@ -34,28 +14,32 @@ export async function getAdminAnalytics() {
     paymentsResult,
     videoCreditsResult,
   ] = await Promise.all([
-    supabase
+    // Total users
+    supabaseAdmin
       .from("profiles")
       .select("*", {
         count: "exact",
         head: true,
       }),
 
-    supabase
+    // Total images
+    supabaseAdmin
       .from("images")
       .select("*", {
         count: "exact",
         head: true,
       }),
 
-    supabase
+    // Total videos
+    supabaseAdmin
       .from("video_generations")
       .select("*", {
         count: "exact",
         head: true,
       }),
 
-    supabase
+    // Active subscriptions
+    supabaseAdmin
       .from("subscriptions")
       .select("*", {
         count: "exact",
@@ -63,14 +47,46 @@ export async function getAdminAnalytics() {
       })
       .eq("status", "active"),
 
-    supabase
+    // Payments
+    // Paystack stores amount in kobo.
+    supabaseAdmin
       .from("payments")
-      .select("amount, status"),
+      .select("amount, status, currency"),
 
-    supabase
+    // Credits consumed by video generation
+    supabaseAdmin
       .from("video_generations")
       .select("credits_used"),
   ]);
+
+  // Log database errors without crashing the entire analytics page.
+  if (usersResult.error) {
+    console.error(
+      "Admin Analytics Users Error:",
+      usersResult.error
+    );
+  }
+
+  if (imagesResult.error) {
+    console.error(
+      "Admin Analytics Images Error:",
+      imagesResult.error
+    );
+  }
+
+  if (videosResult.error) {
+    console.error(
+      "Admin Analytics Videos Error:",
+      videosResult.error
+    );
+  }
+
+  if (subscriptionsResult.error) {
+    console.error(
+      "Admin Analytics Subscriptions Error:",
+      subscriptionsResult.error
+    );
+  }
 
   if (paymentsResult.error) {
     console.error(
@@ -86,6 +102,17 @@ export async function getAdminAnalytics() {
     );
   }
 
+  // --------------------------------------------------
+  // TOTAL REVENUE
+  //
+  // Paystack payment.amount is stored in kobo.
+  //
+  // ₦5,000  = 500,000 kobo
+  // ₦25,000 = 2,500,000 kobo
+  //
+  // Convert kobo to naira by dividing by 100.
+  // --------------------------------------------------
+
   const totalRevenue =
     (paymentsResult.data ?? [])
       .filter(
@@ -97,7 +124,11 @@ export async function getAdminAnalytics() {
         (total, payment) =>
           total + Number(payment.amount || 0),
         0
-      );
+      ) / 100;
+
+  // --------------------------------------------------
+  // TOTAL CREDITS USED
+  // --------------------------------------------------
 
   const creditsUsed =
     (videoCreditsResult.data ?? []).reduce(

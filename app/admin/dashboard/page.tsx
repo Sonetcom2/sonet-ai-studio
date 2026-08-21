@@ -1,5 +1,5 @@
 import { getAdminAnalytics } from "@/services/adminAnalyticsService";
-import { requireAdmin } from "@/lib/supabase/requireAdmin";
+import { requireAdmin } from "@/lib/auth/requireAdmin";
 
 import AdminLayout from "@/components/admin/AdminLayout";
 import AdminStats from "@/components/admin/AdminStats";

@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { initializePayment } from "@/services/paystackService";
 import { createClient } from "@/lib/supabase/client";
 
 const planInfo = {
@@ -48,13 +47,6 @@ function CheckoutContent() {
     loadUser();
   }, []);
 
-  const amount =
-    plan === "FREE"
-      ? 0
-      : plan === "PRO"
-      ? 5000
-      : 25000;
-
   const handlePayment = async () => {
     if (plan === "FREE") {
       alert("You're already on the FREE plan.");
@@ -69,43 +61,47 @@ function CheckoutContent() {
     setLoading(true);
 
     try {
-      await initializePayment({
-        email,
-        amount: amount * 100,
-        reference: `SONET-${Date.now()}`,
+      const response = await fetch(
+        "/api/flutterwave/initialize",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            plan,
+          }),
+        }
+      );
 
-        async onSuccess(reference) {
-          try {
-            const response = await fetch("/api/paystack/verify", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                reference,
-                plan,
-              }),
-            });
+      const data = await response.json();
 
-            const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            "Unable to initialize Flutterwave payment."
+        );
+      }
 
-            if (!data.success) {
-              throw new Error(data.error);
-            }
+      if (!data.checkoutUrl) {
+        throw new Error(
+          "Flutterwave did not return a checkout URL."
+        );
+      }
 
-            alert("🎉 Subscription Activated Successfully!");
+      window.location.href = data.checkoutUrl;
+    } catch (error: unknown) {
+      console.error(
+        "Flutterwave payment initialization error:",
+        error
+      );
 
-            window.location.href = "/dashboard";
-          } catch (error: any) {
-            alert(error.message);
-          } finally {
-            setLoading(false);
-          }
-        },
-      });
-    } catch (error: any) {
-      console.error("Payment initialization error:", error);
-      alert(error.message || "Unable to initialize payment.");
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to initialize payment."
+      );
+
       setLoading(false);
     }
   };
@@ -150,7 +146,7 @@ function CheckoutContent() {
             className="mt-12 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-xl font-bold hover:scale-105 transition disabled:opacity-50"
           >
             {loading
-              ? "Opening Payment..."
+              ? "Opening Flutterwave..."
               : "💳 Continue to Payment"}
           </button>
 
@@ -168,12 +164,8 @@ function CheckoutContent() {
 
 function CheckoutLoading() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-black text-white flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-xl font-semibold">
-          Loading checkout...
-        </p>
-      </div>
+    <main className="min-h-screen bg-black text-white flex items-center justify-center">
+      <p>Loading checkout...</p>
     </main>
   );
 }

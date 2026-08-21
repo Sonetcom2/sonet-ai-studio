@@ -1,4 +1,5 @@
-import { redirect } from "next/navigation";
+import "server-only";
+
 import { createClient } from "@/lib/supabase/server";
 
 export async function requireAdmin() {
@@ -6,21 +7,30 @@ export async function requireAdmin() {
 
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/admin/login");
+  if (authError || !user) {
+    throw new Error("UNAUTHORIZED");
   }
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { data: profile, error: profileError } =
+    await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-  if (error || !profile || profile.role !== "ADMIN") {
-    redirect("/");
+  if (profileError || !profile) {
+    throw new Error("FORBIDDEN");
   }
 
-  return user;
+  if (String(profile.role).toUpperCase() !== "ADMIN") {
+    throw new Error("FORBIDDEN");
+  }
+
+  return {
+    user,
+    profile,
+  };
 }
