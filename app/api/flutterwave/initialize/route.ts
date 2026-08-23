@@ -1,17 +1,23 @@
 
 import { createClient } from "@/lib/supabase/server";
+import { getFlutterwaveAccessToken } from "@/services/flutterwaveService";
 import { NextResponse } from "next/server";
 
-const PLAN_AMOUNTS: Record<string, number> = {
+const PLAN_AMOUNTS: Record<"PRO" | "PREMIUM", number> = {
   PRO: 5000,
   PREMIUM: 25000,
 };
 
 export async function POST(request: Request) {
   try {
-    const { plan } = await request.json();
+    const body = await request.json();
 
-    if (plan !== "PRO" && plan !== "PREMIUM") {
+    const requestedPlan = body?.plan;
+
+    if (
+      requestedPlan !== "PRO" &&
+      requestedPlan !== "PREMIUM"
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -21,19 +27,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const secretKey =
-      process.env.FLUTTERWAVE_SECRET_KEY;
-
-    if (!secretKey) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "FLUTTERWAVE_SECRET_KEY is not configured.",
-        },
-        { status: 500 }
-      );
-    }
+    const plan: "PRO" | "PREMIUM" = requestedPlan;
+    const amount = PLAN_AMOUNTS[plan];
 
     const supabase = await createClient();
 
@@ -62,13 +57,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const amount = PLAN_AMOUNTS[plan];
-
-    const txRef =
-      `SONET-FW-${plan}-${Date.now()}-${crypto
-        .randomUUID()
-        .slice(0, 8)}`;
-
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       "http://localhost:3000";
@@ -76,71 +64,74 @@ export async function POST(request: Request) {
     const redirectUrl =
       `${appUrl}/checkout/flutterwave/callback`;
 
+    const txRef =
+      `SONET-FW-${plan}-${Date.now()}-${crypto
+        .randomUUID()
+        .replace(/-/g, "")
+        .slice(0, 8)}`;
+
+    const accessToken =
+      await getFlutterwaveAccessToken();
+
+    /*
+     * Flutterwave V4 Orchestrator
+     *
+     * IMPORTANT:
+     * The V4 API requires a payment_method object.
+     *
+     * We use card as the initial payment method.
+     * Flutterwave can return a redirect/authorization
+     * action which the customer completes.
+     */
+    const payload = {
+      amount,
+      currency: "NGN",
+      reference: txRef,
+
+      customer: {
+        email: user.email,
+      },
+
+      payment_method: {
+        type: "card",
+      },
+
+      redirect_url: redirectUrl,
+
+      meta: {
+        user_id: user.id,
+        plan,
+      },
+    };
+
     console.log(
-      "Flutterwave hosted checkout request:",
+      "Flutterwave V4 initialize request:",
       {
+        reference: txRef,
         plan,
         amount,
         currency: "NGN",
-        reference: txRef,
         redirectUrl,
+        userEmail: user.email,
       }
     );
 
-    /*
-     * Flutterwave Standard / Hosted Checkout
-     *
-     * Official endpoint:
-     * https://api.flutterwave.com/v3/payments
-     *
-     * Flutterwave returns:
-     * data.link
-     *
-     * The customer is then redirected to that
-     * hosted payment page.
-     */
     const response = await fetch(
-      "https://api.flutterwave.com/v3/payments",
+      "https://api.flutterwave.com/orchestration/direct-charges",
       {
         method: "POST",
 
         headers: {
-          Authorization: `Bearer ${secretKey}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
+
+          "X-Trace-Id": crypto.randomUUID(),
+
+          "X-Idempotency-Key":
+            crypto.randomUUID(),
         },
 
-        body: JSON.stringify({
-          tx_ref: txRef,
-
-          amount,
-
-          currency: "NGN",
-
-          redirect_url: redirectUrl,
-
-          payment_options:
-            "card,banktransfer,ussd",
-
-          customer: {
-            email: user.email,
-          },
-
-          customizations: {
-            title: "SONET AI STUDIO",
-            description:
-              `SONET AI STUDIO ${plan} subscription`,
-          },
-
-          meta: {
-            user_id: user.id,
-            plan,
-          },
-
-          configurations: {
-            session_duration: 30,
-            max_retry_attempt: 5,
-          },
-        }),
+        body: JSON.stringify(payload),
 
         cache: "no-store",
       }
@@ -152,15 +143,22 @@ export async function POST(request: Request) {
     const rawBody = await response.text();
 
     console.log(
-      "Flutterwave hosted checkout response:",
+      "Flutterwave V4 initialize response:",
       {
         status: response.status,
         contentType,
-        body: rawBody.slice(0, 2000),
+        body: rawBody.slice(0, 3000),
       }
     );
 
-    if (!contentType.includes("application/json")) {
+    if (
+      !contentType.includes("application/json")
+    ) {
+      console.error(
+        "Flutterwave returned non-JSON:",
+        rawBody
+      );
+
       return NextResponse.json(
         {
           success: false,
@@ -171,11 +169,16 @@ export async function POST(request: Request) {
       );
     }
 
-    let data: any;
+    let data: unknown;
 
     try {
       data = JSON.parse(rawBody);
     } catch {
+      console.error(
+        "Flutterwave returned invalid JSON:",
+        rawBody
+      );
+
       return NextResponse.json(
         {
           success: false,
@@ -186,40 +189,78 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      !response.ok ||
-      data?.status !== "success"
-    ) {
+    if (!response.ok) {
       console.error(
-        "Flutterwave hosted checkout error:",
-        data
+        "Flutterwave V4 initialization error:",
+        {
+          status: response.status,
+          data,
+        }
       );
+
+      const errorData = data as {
+        message?: string;
+        error?: {
+          message?: string;
+          type?: string;
+          code?: string;
+        };
+      };
 
       return NextResponse.json(
         {
           success: false,
           error:
-            data?.message ||
+            errorData?.error?.message ||
+            errorData?.message ||
             "Unable to initialize Flutterwave payment.",
         },
-        { status: 400 }
+        { status: response.status }
       );
     }
 
-    const checkoutUrl =
-      data?.data?.link;
+    const responseData = data as {
+      status?: string;
+      message?: string;
+      data?: {
+        id?: string;
+        status?: string;
+        reference?: string;
+        next_action?: {
+          type?: string;
+          redirect_url?: {
+            url?: string;
+          };
+        };
+      };
+    };
 
-    if (!checkoutUrl) {
+    const charge =
+      responseData?.data;
+
+    const redirectPaymentUrl =
+      charge?.next_action?.redirect_url?.url;
+
+    /*
+     * V4 may return different next_action types.
+     * For browser-based authorization, redirect_url
+     * is the URL the customer must visit.
+     */
+    if (!redirectPaymentUrl) {
       console.error(
-        "Flutterwave did not return hosted checkout URL:",
-        data
+        "Flutterwave V4 did not return a redirect URL:",
+        JSON.stringify(data, null, 2)
       );
 
       return NextResponse.json(
         {
           success: false,
           error:
-            "Flutterwave did not return a checkout link.",
+            "Flutterwave initialized the payment but did not return a payment authorization URL.",
+          flutterwaveStatus:
+            responseData?.status,
+          nextAction:
+            charge?.next_action || null,
         },
         { status: 502 }
       );
@@ -228,19 +269,26 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
 
-      checkoutUrl,
+      checkoutUrl:
+        redirectPaymentUrl,
 
       reference: txRef,
+
+      transactionId:
+        charge?.id || null,
 
       plan,
 
       amount,
 
       currency: "NGN",
+
+      nextAction:
+        charge?.next_action || null,
     });
   } catch (error: unknown) {
     console.error(
-      "Flutterwave hosted checkout initialization error:",
+      "Flutterwave V4 initialization exception:",
       error
     );
 

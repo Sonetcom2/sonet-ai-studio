@@ -4,7 +4,7 @@ const FLUTTERWAVE_TOKEN_URL =
 
 const FLUTTERWAVE_API_BASE =
   process.env.FLUTTERWAVE_ENVIRONMENT === "production"
-    ? "https://api.flutterwave.com"
+    ? "https://f4bexperience.flutterwave.com"
     : "https://developersandbox-api.flutterwave.com";
 
 type FlutterwaveTokenResponse = {
@@ -131,12 +131,6 @@ export async function getFlutterwaveAccessToken(): Promise<string> {
 
 /**
  * Make an authenticated Flutterwave V4 API request.
- *
- * This helper:
- * - obtains the V4 OAuth token
- * - sends the Bearer token
- * - handles JSON and non-JSON responses safely
- * - returns the parsed Flutterwave response
  */
 export async function flutterwaveRequest<T>(
   path: string,
@@ -240,9 +234,6 @@ export function getFlutterwaveApiBase(): string {
 
 /**
  * Clear the cached OAuth token.
- *
- * Useful if authentication credentials are changed
- * while the server is running.
  */
 export function clearFlutterwaveTokenCache(): void {
   cachedToken = null;
