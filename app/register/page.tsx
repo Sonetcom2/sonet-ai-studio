@@ -1,9 +1,18 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+
+declare global {
+  interface Window {
+    fbq?: (
+      command: string,
+      eventName: string,
+      parameters?: Record<string, unknown>
+    ) => void;
+  }
+}
 
 export default function RegisterPage() {
   const supabase = createClient();
@@ -90,6 +99,18 @@ export default function RegisterPage() {
         return;
       }
 
+      // Meta conversion tracking:
+      // Fire only after Supabase successfully creates the user.
+      if (
+        typeof window !== "undefined" &&
+        window.fbq
+      ) {
+        window.fbq(
+          "track",
+          "CompleteRegistration"
+        );
+      }
+
       /*
        * If Supabase returns a session immediately,
        * we can process the referral now.
@@ -106,7 +127,8 @@ export default function RegisterPage() {
             {
               method: "POST",
               headers: {
-                "Content-Type": "application/json",
+                "Content-Type":
+                  "application/json",
               },
               body: JSON.stringify({
                 referralCode,
