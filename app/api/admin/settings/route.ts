@@ -40,15 +40,25 @@ export async function PUT(req: Request) {
     const settings = await updateSettings({
       site_name: body.site_name,
       maintenance_mode: Boolean(body.maintenance_mode),
+
       free_credits: Number(body.free_credits),
+
       pro_price: Number(body.pro_price),
       pro_credits: Number(body.pro_credits),
+
       premium_price: Number(body.premium_price),
+      premium_credits: Number(body.premium_credits),
+
       image_generation_cost: Number(
         body.image_generation_cost
       ),
+
       video_generation_cost: Number(
         body.video_generation_cost
+      ),
+
+      voice_generation_cost: Number(
+        body.voice_generation_cost
       ),
     });
 

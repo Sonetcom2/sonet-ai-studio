@@ -1,4 +1,3 @@
-
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export type SiteSettings = {
@@ -16,6 +15,7 @@ export type SiteSettings = {
 
   image_generation_cost: number;
   video_generation_cost: number;
+  voice_generation_cost: number;
   assistant_generation_cost: number;
 
   created_at: string;
@@ -34,6 +34,7 @@ type SettingsUpdate = Partial<
     | "premium_credits"
     | "image_generation_cost"
     | "video_generation_cost"
+    | "voice_generation_cost"
     | "assistant_generation_cost"
   >
 >;

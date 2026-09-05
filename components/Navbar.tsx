@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -37,6 +36,11 @@ const navItems = [
     href: "/ai-video",
     label: "AI Video",
     icon: "🎬",
+  },
+  {
+    href: "/voice",
+    label: "Voice Studio",
+    icon: "🎙️",
   },
   {
     href: "/my-images",
@@ -168,9 +172,7 @@ export default function Navbar({ user }: NavbarProps) {
                       item.href === "/"
                         ? pathname === "/"
                         : pathname === item.href ||
-                          pathname.startsWith(
-                            `${item.href}/`
-                          );
+                          pathname.startsWith(`${item.href}/`);
 
                     return (
                       <Link

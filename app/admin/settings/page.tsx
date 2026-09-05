@@ -6,12 +6,20 @@ type Settings = {
   id: string;
   site_name: string;
   maintenance_mode: boolean;
+
   free_credits: number;
+
   pro_price: number;
   pro_credits: number;
+
   premium_price: number;
+  premium_credits: number;
+
   image_generation_cost: number;
   video_generation_cost: number;
+  voice_generation_cost: number;
+  assistant_generation_cost: number;
+
   created_at: string;
   updated_at: string;
 };
@@ -94,15 +102,31 @@ export default function AdminSettingsPage() {
         body: JSON.stringify({
           site_name: settings.site_name,
           maintenance_mode: settings.maintenance_mode,
+
           free_credits: Number(settings.free_credits),
+
           pro_price: Number(settings.pro_price),
           pro_credits: Number(settings.pro_credits),
+
           premium_price: Number(settings.premium_price),
+          premium_credits: Number(
+            settings.premium_credits
+          ),
+
           image_generation_cost: Number(
             settings.image_generation_cost
           ),
+
           video_generation_cost: Number(
             settings.video_generation_cost
+          ),
+
+          voice_generation_cost: Number(
+            settings.voice_generation_cost
+          ),
+
+          assistant_generation_cost: Number(
+            settings.assistant_generation_cost
           ),
         }),
       });
@@ -171,7 +195,6 @@ export default function AdminSettingsPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-7xl">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold">
             Admin Settings
@@ -183,7 +206,6 @@ export default function AdminSettingsPage() {
           </p>
         </div>
 
-        {/* Messages */}
         {message && (
           <div className="mb-6 rounded-xl border border-green-500/30 bg-green-500/10 px-5 py-4 text-green-400">
             {message}
@@ -205,8 +227,7 @@ export default function AdminSettingsPage() {
               </h2>
 
               <p className="mt-1 text-sm text-slate-400">
-                Basic information and availability of the
-                platform.
+                Basic information and platform availability.
               </p>
 
               <div className="mt-6 space-y-5">
@@ -356,26 +377,48 @@ export default function AdminSettingsPage() {
               </h2>
 
               <p className="mt-1 text-sm text-slate-400">
-                Configure Premium subscription pricing.
+                Configure Premium subscription pricing and
+                credits.
               </p>
 
-              <div className="mt-6">
-                <label className="mb-2 block text-sm font-medium text-slate-300">
-                  Premium Price (NGN)
-                </label>
+              <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Premium Price (NGN)
+                  </label>
 
-                <input
-                  type="number"
-                  min="0"
-                  value={settings.premium_price}
-                  onChange={(event) =>
-                    updateField(
-                      "premium_price",
-                      Number(event.target.value)
-                    )
-                  }
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
-                />
+                  <input
+                    type="number"
+                    min="0"
+                    value={settings.premium_price}
+                    onChange={(event) =>
+                      updateField(
+                        "premium_price",
+                        Number(event.target.value)
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Premium Credits
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={settings.premium_credits}
+                    onChange={(event) =>
+                      updateField(
+                        "premium_credits",
+                        Number(event.target.value)
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
             </section>
 
@@ -386,22 +429,20 @@ export default function AdminSettingsPage() {
               </h2>
 
               <p className="mt-1 text-sm text-slate-400">
-                Set the number of credits consumed by each
-                generation.
+                Set the credits consumed by each AI feature.
               </p>
 
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+                {/* Image */}
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-300">
-                    Image Generation Cost
+                    Image Cost
                   </label>
 
                   <input
                     type="number"
                     min="0"
-                    value={
-                      settings.image_generation_cost
-                    }
+                    value={settings.image_generation_cost}
                     onChange={(event) =>
                       updateField(
                         "image_generation_cost",
@@ -412,21 +453,20 @@ export default function AdminSettingsPage() {
                   />
 
                   <p className="mt-2 text-xs text-slate-500">
-                    Credits charged per generated image.
+                    Credits per image.
                   </p>
                 </div>
 
+                {/* Video */}
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-300">
-                    Video Generation Cost
+                    Video Cost
                   </label>
 
                   <input
                     type="number"
                     min="0"
-                    value={
-                      settings.video_generation_cost
-                    }
+                    value={settings.video_generation_cost}
                     onChange={(event) =>
                       updateField(
                         "video_generation_cost",
@@ -437,14 +477,63 @@ export default function AdminSettingsPage() {
                   />
 
                   <p className="mt-2 text-xs text-slate-500">
-                    Credits charged per generated video.
+                    Credits per video.
+                  </p>
+                </div>
+
+                {/* Voice */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Voice Cost
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={settings.voice_generation_cost}
+                    onChange={(event) =>
+                      updateField(
+                        "voice_generation_cost",
+                        Number(event.target.value)
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    Credits per voice generation.
+                  </p>
+                </div>
+
+                {/* Assistant */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Assistant Cost
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      settings.assistant_generation_cost
+                    }
+                    onChange={(event) =>
+                      updateField(
+                        "assistant_generation_cost",
+                        Number(event.target.value)
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+                  />
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    Credits per assistant generation.
                   </p>
                 </div>
               </div>
             </section>
           </div>
 
-          {/* Save */}
           <div className="mt-8 flex justify-end">
             <button
               type="submit"
