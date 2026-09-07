@@ -11,11 +11,12 @@ export async function getAllPayments() {
     throw new Error("Unauthorized.");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { data: profile, error: profileError } =
+    await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
   if (
     profileError ||
@@ -35,13 +36,24 @@ export async function getAllPayments() {
       provider,
       reference,
       status,
+      plan,
+      payment_method,
+      customer_note,
       created_at
     `)
-    .order("created_at", { ascending: false });
+    .order("created_at", {
+      ascending: false,
+    });
 
   if (error) {
-    console.error("Admin Payments Error:", error);
-    throw new Error("Unable to load payments.");
+    console.error(
+      "Admin Payments Error:",
+      error
+    );
+
+    throw new Error(
+      "Unable to load payments."
+    );
   }
 
   return data ?? [];

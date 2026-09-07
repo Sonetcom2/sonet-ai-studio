@@ -8,6 +8,9 @@ type Payment = {
   provider: string | null;
   reference: string | null;
   status: string | null;
+  plan?: string | null;
+  payment_method?: string | null;
+  customer_note?: string | null;
   created_at: string;
 };
 
@@ -24,7 +27,8 @@ export default function PaymentModal({
 }: Props) {
   if (!open || !payment) return null;
 
-  const status = payment.status?.toUpperCase() || "PENDING";
+  const status =
+    payment.status?.toUpperCase() || "PENDING";
 
   const statusClass =
     status === "SUCCESS"
@@ -32,6 +36,15 @@ export default function PaymentModal({
       : status === "FAILED"
         ? "bg-red-500/20 text-red-300"
         : "bg-yellow-500/20 text-yellow-300";
+
+  const plan =
+    payment.plan?.toUpperCase() || "—";
+
+  const paymentMethod =
+    payment.payment_method || "—";
+
+  const provider =
+    payment.provider || "—";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
@@ -48,7 +61,7 @@ export default function PaymentModal({
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">
-              Transaction information
+              Complete transaction information
             </p>
           </div>
 
@@ -77,6 +90,11 @@ export default function PaymentModal({
           />
 
           <Info
+            label="Plan"
+            value={plan}
+          />
+
+          <Info
             label="Amount"
             value={`${payment.currency || "NGN"} ${Number(
               payment.amount || 0
@@ -85,13 +103,32 @@ export default function PaymentModal({
 
           <Info
             label="Provider"
-            value={payment.provider || "—"}
+            value={provider}
           />
 
           <Info
-            label="Reference"
+            label="Payment Method"
+            value={paymentMethod}
+          />
+
+          <Info
+            label="Payment Reference"
             value={payment.reference || "—"}
           />
+
+          {payment.customer_note && (
+            <div className="border-b border-slate-700 pb-4">
+
+              <div className="mb-2 font-medium text-slate-400">
+                Customer Note / Transfer Reference
+              </div>
+
+              <div className="rounded-xl border border-slate-700 bg-slate-800 p-4 text-sm leading-6 text-white">
+                {payment.customer_note}
+              </div>
+
+            </div>
+          )}
 
           <div className="flex items-center justify-between border-b border-slate-700 pb-4">
 
