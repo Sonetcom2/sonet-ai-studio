@@ -1,7 +1,18 @@
+
 "use client";
 
 import { useState } from "react";
 import PaymentModal from "./PaymentModal";
+
+declare global {
+  interface Window {
+    fbq?: (
+      command: string,
+      eventName: string,
+      parameters?: Record<string, unknown>
+    ) => void;
+  }
+}
 
 type Payment = {
   id: string;
@@ -11,6 +22,7 @@ type Payment = {
   provider: string | null;
   reference: string | null;
   status: string | null;
+  plan: string | null;
   created_at: string;
 };
 
@@ -32,13 +44,16 @@ export default function PaymentTable({ payments }: Props) {
   const filteredPayments = payments.filter((payment) => {
     const query = search.toLowerCase().trim();
 
-    if (!query) return true;
+    if (!query) {
+      return true;
+    }
 
     return (
       payment.reference?.toLowerCase().includes(query) ||
       payment.user_id?.toLowerCase().includes(query) ||
       payment.provider?.toLowerCase().includes(query) ||
-      payment.status?.toLowerCase().includes(query)
+      payment.status?.toLowerCase().includes(query) ||
+      payment.plan?.toLowerCase().includes(query)
     );
   });
 
@@ -51,19 +66,81 @@ export default function PaymentTable({ payments }: Props) {
     ).toLocaleString()}`;
   };
 
+  const trackMetaPurchase = (payment: Payment) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (typeof window.fbq !== "function") {
+      console.warn(
+        "Meta Pixel is not available. Purchase event was not sent."
+      );
+
+      return;
+    }
+
+    const value = Number(payment.amount || 0);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      console.warn(
+        "Invalid payment amount. Purchase event was not sent."
+      );
+
+      return;
+    }
+
+    const currency = (
+      payment.currency || "NGN"
+    ).toUpperCase();
+
+    try {
+      window.fbq(
+        "track",
+        "Purchase",
+        {
+          value,
+          currency,
+          content_name:
+            payment.plan ||
+            "SONET AI STUDIO Subscription",
+          content_type: "subscription",
+        }
+      );
+
+      console.log("Meta Purchase event sent:", {
+        value,
+        currency,
+        plan: payment.plan,
+        paymentId: payment.id,
+        reference: payment.reference,
+      });
+    } catch (error) {
+      console.error(
+        "Meta Purchase Tracking Error:",
+        error
+      );
+    }
+  };
+
   const handleApprove = async (payment: Payment) => {
-    if (processingPaymentId) return;
+    if (processingPaymentId) {
+      return;
+    }
 
     const confirmed = window.confirm(
       `Approve this manual payment?\n\nReference: ${
         payment.reference || "N/A"
+      }\nPlan: ${
+        payment.plan || "N/A"
       }\nAmount: ${formatAmount(
         payment.amount,
         payment.currency
       )}\n\nThis will activate the user's subscription and credits.`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setProcessingPaymentId(payment.id);
@@ -85,6 +162,13 @@ export default function PaymentTable({ payments }: Props) {
           result.error || "Unable to approve payment."
         );
       }
+
+      const approvedPayment: Payment = {
+        ...payment,
+        ...(result.payment || {}),
+      };
+
+      trackMetaPurchase(approvedPayment);
 
       window.alert(
         "Payment approved successfully. The user's subscription and credits have been activated."
@@ -108,18 +192,24 @@ export default function PaymentTable({ payments }: Props) {
   };
 
   const handleReject = async (payment: Payment) => {
-    if (processingPaymentId) return;
+    if (processingPaymentId) {
+      return;
+    }
 
     const confirmed = window.confirm(
       `Reject this manual payment?\n\nReference: ${
         payment.reference || "N/A"
+      }\nPlan: ${
+        payment.plan || "N/A"
       }\nAmount: ${formatAmount(
         payment.amount,
         payment.currency
       )}\n\nThe payment will be marked as FAILED.`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setProcessingPaymentId(payment.id);
@@ -165,7 +255,6 @@ export default function PaymentTable({ payments }: Props) {
 
   return (
     <>
-      {/* Search */}
       <div className="border-b border-slate-700 p-6">
         <div className="relative max-w-xl">
           <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
@@ -178,7 +267,7 @@ export default function PaymentTable({ payments }: Props) {
             onChange={(event) =>
               setSearch(event.target.value)
             }
-            placeholder="Search reference, user ID, provider or status..."
+            placeholder="Search reference, user ID, provider, plan or status..."
             className="w-full rounded-xl border border-slate-700 bg-slate-800 py-3 pl-11 pr-4 text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
           />
         </div>
@@ -191,7 +280,6 @@ export default function PaymentTable({ payments }: Props) {
         )}
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-slate-800">
@@ -202,6 +290,10 @@ export default function PaymentTable({ payments }: Props) {
 
               <th className="px-6 py-4">
                 User
+              </th>
+
+              <th className="px-6 py-4">
+                Plan
               </th>
 
               <th className="px-6 py-4">
@@ -230,7 +322,7 @@ export default function PaymentTable({ payments }: Props) {
             {filteredPayments.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="p-16 text-center"
                 >
                   <div className="text-5xl">
@@ -253,14 +345,16 @@ export default function PaymentTable({ payments }: Props) {
                   "PENDING";
 
                 const provider =
-                  payment.provider?.toUpperCase() || "";
+                  payment.provider?.toUpperCase() ||
+                  "";
 
                 const isManualPending =
                   provider === "MANUAL" &&
                   status === "PENDING";
 
                 const isProcessing =
-                  processingPaymentId === payment.id;
+                  processingPaymentId ===
+                  payment.id;
 
                 return (
                   <tr
@@ -269,7 +363,8 @@ export default function PaymentTable({ payments }: Props) {
                   >
                     <td className="px-6 py-5">
                       <span className="font-mono text-sm text-cyan-400">
-                        {payment.reference || "—"}
+                        {payment.reference ||
+                          "—"}
                       </span>
                     </td>
 
@@ -284,6 +379,20 @@ export default function PaymentTable({ payments }: Props) {
                       </span>
                     </td>
 
+                    <td className="px-6 py-5">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          payment.plan?.toUpperCase() ===
+                          "PREMIUM"
+                            ? "bg-purple-500/20 text-purple-300"
+                            : "bg-cyan-500/20 text-cyan-300"
+                        }`}
+                      >
+                        {payment.plan ||
+                          "—"}
+                      </span>
+                    </td>
+
                     <td className="px-6 py-5 font-semibold text-white">
                       {formatAmount(
                         payment.amount,
@@ -292,7 +401,8 @@ export default function PaymentTable({ payments }: Props) {
                     </td>
 
                     <td className="px-6 py-5 text-slate-300">
-                      {payment.provider || "—"}
+                      {payment.provider ||
+                        "—"}
                     </td>
 
                     <td className="px-6 py-5">
@@ -327,6 +437,7 @@ export default function PaymentTable({ payments }: Props) {
                             setSelectedPayment(
                               payment
                             );
+
                             setOpenModal(true);
                           }}
                           className="rounded-lg bg-blue-600 px-3 py-2 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -340,10 +451,12 @@ export default function PaymentTable({ payments }: Props) {
                               type="button"
                               disabled={
                                 processingPaymentId !==
-                                  null
+                                null
                               }
                               onClick={() =>
-                                handleApprove(payment)
+                                handleApprove(
+                                  payment
+                                )
                               }
                               className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
@@ -356,10 +469,12 @@ export default function PaymentTable({ payments }: Props) {
                               type="button"
                               disabled={
                                 processingPaymentId !==
-                                  null
+                                null
                               }
                               onClick={() =>
-                                handleReject(payment)
+                                handleReject(
+                                  payment
+                                )
                               }
                               className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
@@ -379,7 +494,6 @@ export default function PaymentTable({ payments }: Props) {
         </table>
       </div>
 
-      {/* Payment Modal */}
       <PaymentModal
         payment={selectedPayment}
         open={openModal}
