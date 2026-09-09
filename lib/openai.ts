@@ -12,7 +12,8 @@ export function getOpenAI(): OpenAI {
 
     openaiClient = new OpenAI({
       apiKey,
-      timeout: 120000,
+      timeout: 240000, // 4 minutes
+      maxRetries: 0,   // Prevent automatic retries from extending generation time
     });
   }
 

@@ -210,8 +210,8 @@ export default function AIImagePage() {
     try {
       const formData = new FormData();
       formData.append("prompt", prompt.trim());
-      formData.append("model", "gpt-image-1");
-      formData.append("quality", "high");
+      formData.append("model", "gpt-image-2");
+formData.append("quality", "medium");
       formData.append("style", "auto");
       formData.append("aspectRatio", "1:1");
 

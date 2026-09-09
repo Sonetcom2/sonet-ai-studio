@@ -1,393 +1,808 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
-import { generateImage } from "@/services/imageService";
-import { getSettings } from "@/services/settingsService";
 
-const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024;
+import { createClient } from "@/lib/supabase/server";
+import { generateImage } from "@/services/imageService";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+const IMAGE_COST = 10;
+const MAX_REFERENCE_SIZE = 10 * 1024 * 1024;
+const OPENAI_TIMEOUT = 240000;
+
+type ImageQuality =
+  | "low"
+  | "medium"
+  | "high"
+  | "auto";
 
 const ALLOWED_IMAGE_TYPES = [
-  "image/png",
   "image/jpeg",
+  "image/png",
   "image/webp",
 ];
 
-export async function POST(req: Request) {
+function isAllowedImageType(type: string) {
+  return ALLOWED_IMAGE_TYPES.includes(type);
+}
+
+async function fileToDataUrl(
+  file: File
+): Promise<string> {
+  const arrayBuffer =
+    await file.arrayBuffer();
+
+  const buffer =
+    Buffer.from(arrayBuffer);
+
+  return `data:${file.type};base64,${buffer.toString(
+    "base64"
+  )}`;
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T> {
+  return new Promise<T>(
+    (resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Image generation timed out after ${Math.round(
+              timeoutMs / 1000
+            )} seconds.`
+          )
+        );
+      }, timeoutMs);
+
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        }
+      );
+    }
+  );
+}
+
+export async function POST(
+  request: Request
+) {
+  console.log(
+    "========================================"
+  );
+  console.log(
+    "GENERATE IMAGE API START"
+  );
+  console.log(
+    "========================================"
+  );
+
+  const supabase =
+    await createClient();
+
   let userId: string | null = null;
-  let originalCredits: number | null = null;
-  let uploadedFilePath: string | null = null;
+  let creditsDeducted = false;
+  let uploadedStoragePath:
+    | string
+    | null = null;
 
   try {
-    console.log("========================================");
-    console.log("GENERATE IMAGE API START");
-    console.log("========================================");
-
-    const supabase = await createClient();
-
-    // ==========================================
-    // 1. GET LOGGED-IN USER
-    // ==========================================
+    // ---------------------------------------------------------
+    // 1. AUTHENTICATION
+    // ---------------------------------------------------------
 
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    if (authError) {
+      console.error(
+        "Authentication error:",
+        authError
+      );
+    }
 
     if (!user) {
       return NextResponse.json(
         {
           success: false,
-          error: "Unauthorized. Please login first.",
+          error:
+            "Unauthorized. Please login first.",
         },
-        {
-          status: 401,
-        }
+        { status: 401 }
       );
     }
 
     userId = user.id;
 
-    // ==========================================
-    // 2. GET ADMIN SETTINGS
-    // ==========================================
-
-    const settings = await getSettings();
-
-    const imageGenerationCost = Number(
-      settings.image_generation_cost
-    );
-
-    if (
-      !Number.isFinite(imageGenerationCost) ||
-      imageGenerationCost < 0
-    ) {
-      throw new Error(
-        "Invalid image generation cost configured."
-      );
-    }
-
     console.log(
-      "Image generation cost:",
-      imageGenerationCost
+      "Authenticated user:",
+      user.email
     );
 
-    // ==========================================
-    // 3. READ FORM DATA
-    // ==========================================
+    // ---------------------------------------------------------
+    // 2. READ FORM DATA
+    // ---------------------------------------------------------
 
-    const formData = await req.formData();
+    const formData =
+      await request.formData();
 
-    const prompt = String(
-      formData.get("prompt") ?? ""
-    ).trim();
+    const promptValue =
+      formData.get("prompt");
 
-    const model = String(
-      formData.get("model") ?? "gpt-image-1"
-    );
+    const referenceImageValue =
+      formData.get("referenceImage");
 
-    const quality = String(
-      formData.get("quality") ?? "high"
-    ) as "low" | "medium" | "high" | "auto";
+    const requestedModelValue =
+      formData.get("model");
 
-    const style = String(
-      formData.get("style") ?? "auto"
-    );
+    const qualityValue =
+      formData.get("quality");
 
-    const aspectRatio = String(
-      formData.get("aspectRatio") ?? "1:1"
-    );
+    const styleValue =
+      formData.get("style");
 
-    const referenceImage = formData.get(
-      "referenceImage"
-    );
+    const aspectRatioValue =
+      formData.get("aspectRatio");
 
-    // ==========================================
-    // 4. VALIDATE PROMPT
-    // ==========================================
+    const prompt =
+      typeof promptValue === "string"
+        ? promptValue.trim()
+        : "";
+
+    const requestedModel =
+      typeof requestedModelValue ===
+      "string"
+        ? requestedModelValue
+        : "gpt-image-2";
+
+    const quality: ImageQuality =
+      qualityValue === "low" ||
+      qualityValue === "medium" ||
+      qualityValue === "high" ||
+      qualityValue === "auto"
+        ? qualityValue
+        : "medium";
+
+    const style =
+      typeof styleValue === "string"
+        ? styleValue
+        : "auto";
+
+    const aspectRatio =
+      typeof aspectRatioValue ===
+      "string"
+        ? aspectRatioValue
+        : "1:1";
+
+    // ---------------------------------------------------------
+    // 3. VALIDATE PROMPT
+    // ---------------------------------------------------------
 
     if (!prompt) {
       return NextResponse.json(
         {
           success: false,
-          error: "Prompt is required.",
+          error:
+            "Please enter an image prompt.",
         },
+        { status: 400 }
+      );
+    }
+
+    if (prompt.length > 10000) {
+      return NextResponse.json(
         {
-          status: 400,
-        }
+          success: false,
+          error:
+            "Prompt is too long. Please shorten your prompt.",
+        },
+        { status: 400 }
       );
     }
 
-    // ==========================================
-    // 5. VALIDATE REFERENCE IMAGE
-    // ==========================================
+    // ---------------------------------------------------------
+    // 4. FORCE GPT-IMAGE-2
+    // ---------------------------------------------------------
 
-    let referenceImageDataUrl: string | null = null;
+    const effectiveModel =
+      "gpt-image-2";
 
-    if (referenceImage instanceof File) {
-      console.log(
-        "Reference image received:",
-        referenceImage.name
-      );
+    console.log(
+      "Requested model:",
+      requestedModel
+    );
 
-      if (!ALLOWED_IMAGE_TYPES.includes(referenceImage.type)) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              "Invalid reference image format. Please use PNG, JPG, JPEG, or WEBP.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
+    console.log(
+      "Effective model:",
+      effectiveModel
+    );
 
-      if (referenceImage.size > MAX_REFERENCE_IMAGE_SIZE) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              "Reference image is too large. Maximum size is 10 MB.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
+    console.log(
+      "Quality:",
+      quality
+    );
 
-      if (referenceImage.size === 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "The reference image is empty.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
+    console.log(
+      "Style:",
+      style
+    );
 
-      // Convert uploaded image into a data URL.
-      const arrayBuffer =
-        await referenceImage.arrayBuffer();
+    console.log(
+      "Aspect ratio:",
+      aspectRatio
+    );
 
-      const buffer = Buffer.from(arrayBuffer);
-
-      const base64 = buffer.toString("base64");
-
-      referenceImageDataUrl =
-        `data:${referenceImage.type};base64,${base64}`;
-
-      console.log(
-        "Reference image converted successfully."
-      );
-    }
-
-    // ==========================================
-    // 6. GET USER PROFILE / CREDITS
-    // ==========================================
+    // ---------------------------------------------------------
+    // 5. CHECK USER PROFILE / CREDITS
+    // ---------------------------------------------------------
 
     const {
       data: profile,
       error: profileError,
-    } = await supabaseAdmin
+    } = await supabase
       .from("profiles")
-      .select("credits, plan")
+      .select(
+        "credits, plan"
+      )
       .eq("id", user.id)
       .single();
 
-    if (profileError || !profile) {
+    if (profileError) {
       console.error(
-        "Profile error:",
+        "Profile lookup error:",
         profileError
       );
 
       return NextResponse.json(
         {
           success: false,
-          error: "Profile not found.",
+          error:
+            "Unable to verify your account credits.",
         },
-        {
-          status: 404,
-        }
+        { status: 500 }
       );
     }
 
-    const currentCredits = Number(
-      profile.credits ?? 0
+    const currentCredits =
+      Number(
+        profile?.credits ?? 0
+      );
+
+    console.log(
+      "Current credits:",
+      currentCredits
     );
 
-    originalCredits = currentCredits;
+    console.log(
+      "Image generation cost:",
+      IMAGE_COST
+    );
 
-    // ==========================================
-    // 7. CHECK CREDITS
-    // ==========================================
-
-    if (currentCredits < imageGenerationCost) {
+    if (
+      currentCredits <
+      IMAGE_COST
+    ) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "You don't have enough credits to generate an image.",
-          creditsRemaining: currentCredits,
-          creditsRequired: imageGenerationCost,
+            "Insufficient credits. Please upgrade your plan or add more credits.",
+          credits:
+            currentCredits,
+          required:
+            IMAGE_COST,
         },
-        {
-          status: 400,
-        }
+        { status: 402 }
       );
     }
 
-    // ==========================================
-    // 8. DEDUCT CREDITS
-    // ==========================================
+    // ---------------------------------------------------------
+    // 6. REFERENCE IMAGE
+    // ---------------------------------------------------------
+
+    let referenceImage:
+      | string
+      | undefined;
+
+    if (
+      referenceImageValue instanceof
+      File
+    ) {
+      console.log(
+        "Reference image received:",
+        referenceImageValue.name
+      );
+
+      console.log(
+        "Reference image type:",
+        referenceImageValue.type
+      );
+
+      console.log(
+        "Reference image size:",
+        referenceImageValue.size,
+        "bytes"
+      );
+
+      if (
+        referenceImageValue.size <=
+        0
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "The reference image is empty.",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (
+        referenceImageValue.size >
+        MAX_REFERENCE_SIZE
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Reference image is too large. Maximum size is 10MB.",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (
+        !isAllowedImageType(
+          referenceImageValue.type
+        )
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Unsupported reference image format. Please use JPG, PNG, or WebP.",
+          },
+          { status: 400 }
+        );
+      }
+
+      try {
+        referenceImage =
+          await fileToDataUrl(
+            referenceImageValue
+          );
+
+        console.log(
+          "Reference image converted successfully."
+        );
+      } catch (error) {
+        console.error(
+          "Reference image conversion error:",
+          error
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Unable to process the reference image.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    console.log(
+      "Reference image mode:",
+      referenceImage
+        ? "true"
+        : "false"
+    );
+
+    // ---------------------------------------------------------
+    // 7. DEDUCT CREDITS
+    // ---------------------------------------------------------
 
     const newCredits =
-      currentCredits - imageGenerationCost;
+      currentCredits -
+      IMAGE_COST;
 
     const {
-      error: deductError,
-    } = await supabaseAdmin
+      error: creditError,
+    } = await supabase
       .from("profiles")
       .update({
         credits: newCredits,
       })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .eq(
+        "credits",
+        currentCredits
+      );
 
-    if (deductError) {
+    if (creditError) {
       console.error(
         "Credit deduction error:",
-        deductError
+        creditError
       );
 
       return NextResponse.json(
         {
           success: false,
-          error: "Unable to deduct credits.",
+          error:
+            "Unable to reserve credits for this generation.",
         },
-        {
-          status: 500,
-        }
+        { status: 500 }
       );
     }
 
+    creditsDeducted = true;
+
     console.log(
-      `Credits deducted: ${imageGenerationCost}`
+      "Credits deducted:",
+      IMAGE_COST
     );
 
     console.log(
-      `Remaining credits: ${newCredits}`
+      "Remaining credits:",
+      newCredits
     );
 
-    // ==========================================
-    // 9. GENERATE IMAGE
-    // ==========================================
+    // ---------------------------------------------------------
+    // 8. GENERATE IMAGE
+    // ---------------------------------------------------------
 
-    console.log("Generating AI image...");
+    console.log(
+      "========================================"
+    );
 
-    if (referenceImageDataUrl) {
+    console.log(
+      "Generating AI image..."
+    );
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "IMAGE GENERATION START"
+    );
+
+    console.log(
+      "Model:",
+      effectiveModel
+    );
+
+    console.log(
+      "Quality:",
+      quality
+    );
+
+    console.log(
+      "Style:",
+      style
+    );
+
+    console.log(
+      "Aspect ratio:",
+      aspectRatio
+    );
+
+    console.log(
+      "Has reference image:",
+      Boolean(referenceImage)
+    );
+
+    if (referenceImage) {
       console.log(
-        "Using reference image generation."
+        "REFERENCE IMAGE EDIT MODE"
+      );
+
+      console.log(
+        "Identity preservation: ENABLED"
+      );
+
+      console.log(
+        "Input fidelity parameter: NOT USED — GPT-Image-2 handles image inputs natively"
       );
     }
 
-    const generatedImage = await generateImage({
-      prompt,
-      model,
-      quality,
-      style,
-      aspectRatio,
-      referenceImage: referenceImageDataUrl,
-    });
+    const generationPromise =
+      generateImage({
+        prompt,
+        model:
+          effectiveModel,
+        quality,
+        style,
+        aspectRatio,
+        referenceImage,
+      });
 
-    if (!generatedImage) {
+    const generationResult =
+      await withTimeout(
+        generationPromise,
+        OPENAI_TIMEOUT
+      );
+
+    console.log(
+      "IMAGE GENERATION SUCCESS"
+    );
+
+    // ---------------------------------------------------------
+    // 9. EXTRACT GENERATED IMAGE
+    // ---------------------------------------------------------
+
+    let generatedImageUrl:
+      | string
+      | null = null;
+
+    if (
+      typeof generationResult ===
+      "string"
+    ) {
+      generatedImageUrl =
+        generationResult;
+    } else if (
+      generationResult &&
+      typeof generationResult ===
+        "object"
+    ) {
+      const resultObject =
+        generationResult as Record<
+          string,
+          unknown
+        >;
+
+      if (
+        typeof resultObject.url ===
+        "string"
+      ) {
+        generatedImageUrl =
+          resultObject.url;
+      } else if (
+        typeof resultObject.image ===
+        "string"
+      ) {
+        generatedImageUrl =
+          resultObject.image;
+      } else if (
+        typeof resultObject.imageUrl ===
+        "string"
+      ) {
+        generatedImageUrl =
+          resultObject.imageUrl;
+      } else if (
+        typeof resultObject.dataUrl ===
+        "string"
+      ) {
+        generatedImageUrl =
+          resultObject.dataUrl;
+      }
+    }
+
+    if (!generatedImageUrl) {
+      console.error(
+        "Unable to extract image URL from generation result:",
+        generationResult
+      );
+
       throw new Error(
-        "Image generation returned no image."
+        "AI generated an image, but no image URL was returned."
       );
     }
 
-    // ==========================================
-    // 10. CONVERT GENERATED IMAGE
-    // ==========================================
+    console.log(
+      "Generated image URL received."
+    );
 
-    let imageBuffer: Buffer;
+    // ---------------------------------------------------------
+    // 10. DOWNLOAD / DECODE IMAGE
+    // ---------------------------------------------------------
 
-    if (generatedImage.startsWith("data:")) {
-      const matches = generatedImage.match(
-        /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/
+    let imageBytes: Uint8Array;
+
+    let contentType =
+      "image/png";
+
+    if (
+      generatedImageUrl.startsWith(
+        "data:"
+      )
+    ) {
+      console.log(
+        "Generated image is a data URL."
       );
 
-      if (!matches) {
+      const match =
+        generatedImageUrl.match(
+          /^data:([^;]+);base64,(.+)$/
+        );
+
+      if (!match) {
         throw new Error(
-          "Invalid generated image data."
+          "Invalid generated image data URL."
         );
       }
 
-      imageBuffer = Buffer.from(
-        matches[1],
-        "base64"
-      );
+      contentType =
+        match[1];
+
+      const base64Data =
+        match[2];
+
+      imageBytes =
+        Uint8Array.from(
+          Buffer.from(
+            base64Data,
+            "base64"
+          )
+        );
     } else {
-      throw new Error(
-        "Generated image has an invalid format."
+      console.log(
+        "Generated image is a remote URL."
       );
+
+      const imageResponse =
+        await fetch(
+          generatedImageUrl
+        );
+
+      if (!imageResponse.ok) {
+        throw new Error(
+          `Unable to download generated image. HTTP ${imageResponse.status}`
+        );
+      }
+
+      const responseContentType =
+        imageResponse.headers.get(
+          "content-type"
+        );
+
+      if (
+        responseContentType?.startsWith(
+          "image/"
+        )
+      ) {
+        contentType =
+          responseContentType;
+      }
+
+      imageBytes =
+        new Uint8Array(
+          await imageResponse.arrayBuffer()
+        );
     }
 
-    // ==========================================
-    // 11. UPLOAD GENERATED IMAGE
-    // ==========================================
+    console.log(
+      "Generated image bytes:",
+      imageBytes.length
+    );
 
-    const filePath =
-      `${user.id}/${Date.now()}-${crypto.randomUUID()}.png`;
+    // ---------------------------------------------------------
+    // 11. STORAGE FILE NAME
+    // ---------------------------------------------------------
 
-    uploadedFilePath = filePath;
+    const extension =
+      contentType.includes(
+        "jpeg"
+      ) ||
+      contentType.includes(
+        "jpg"
+      )
+        ? "jpg"
+        : contentType.includes(
+            "webp"
+          )
+        ? "webp"
+        : "png";
+
+    const fileName =
+      `${user.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+
+    uploadedStoragePath =
+      fileName;
+
+    console.log(
+      "Storage path:",
+      fileName
+    );
+
+    // ---------------------------------------------------------
+    // 12. UPLOAD TO SUPABASE STORAGE
+    // ---------------------------------------------------------
+
+    console.log(
+      "Uploading generated image..."
+    );
 
     const {
       error: uploadError,
-    } = await supabaseAdmin.storage
-      .from("generated-images")
-      .upload(filePath, imageBuffer, {
-        contentType: "image/png",
-        upsert: false,
-      });
+    } = await supabase.storage
+      .from(
+        "generated-images"
+      )
+      .upload(
+        fileName,
+        imageBytes,
+        {
+          contentType,
+          upsert: false,
+        }
+      );
 
     if (uploadError) {
       console.error(
-        "Storage upload error:",
+        "Supabase image upload error:",
         uploadError
       );
 
       throw new Error(
-        "Unable to save generated image."
-      );
-    }
-
-    // ==========================================
-    // 12. GET PUBLIC URL
-    // ==========================================
-
-    const {
-      data: { publicUrl },
-    } = supabaseAdmin.storage
-      .from("generated-images")
-      .getPublicUrl(filePath);
-
-    if (!publicUrl) {
-      throw new Error(
-        "Unable to create image URL."
+        "Generated image could not be uploaded."
       );
     }
 
     console.log(
-      "Generated image uploaded."
+      "Generated image uploaded successfully."
     );
 
-    // ==========================================
-    // 13. SAVE IMAGE TO DATABASE
-    // ==========================================
+    // ---------------------------------------------------------
+    // 13. GET PUBLIC URL
+    // ---------------------------------------------------------
 
     const {
-      error: imageError,
-    } = await supabaseAdmin
+      data: publicUrlData,
+    } = supabase.storage
+      .from(
+        "generated-images"
+      )
+      .getPublicUrl(
+        fileName
+      );
+
+    const publicUrl =
+      publicUrlData?.publicUrl;
+
+    if (!publicUrl) {
+      throw new Error(
+        "Unable to create a public URL for the generated image."
+      );
+    }
+
+    console.log(
+      "Public image URL created."
+    );
+
+    // ---------------------------------------------------------
+    // 14. SAVE IMAGE HISTORY
+    // ---------------------------------------------------------
+    //
+    // IMPORTANT:
+    // The existing `images` table does NOT contain
+    // `model` or `quality` columns.
+    //
+    // Confirmed fields from /api/my-images:
+    //
+    // id
+    // user_id
+    // image_url
+    // prompt
+    // created_at
+    //
+    // Therefore we only insert fields that exist.
+    // ---------------------------------------------------------
+
+    const {
+      error: insertError,
+    } = await supabase
       .from("images")
       .insert({
         user_id: user.id,
@@ -395,101 +810,199 @@ export async function POST(req: Request) {
         image_url: publicUrl,
       });
 
-    if (imageError) {
+    if (insertError) {
       console.error(
-        "Database image error:",
-        imageError
+        "Image history insert error:",
+        insertError
       );
 
       throw new Error(
-        "Unable to save image information."
+        "Image was generated but could not be saved to your history."
       );
     }
 
     console.log(
-      "Image saved to database."
+      "Image history saved successfully."
     );
 
-    // ==========================================
-    // 14. SUCCESS
-    // ==========================================
+    // ---------------------------------------------------------
+    // 15. SUCCESS
+    // ---------------------------------------------------------
 
-    console.log("========================================");
-    console.log("GENERATE IMAGE API SUCCESS");
-    console.log("========================================");
-
-    return NextResponse.json({
-      success: true,
-      image: publicUrl,
-      creditsUsed: imageGenerationCost,
-      creditsRemaining: newCredits,
-      hasReferenceImage:
-        Boolean(referenceImageDataUrl),
-    });
-  } catch (error) {
-    console.error(
-      "Generate Image Error:",
-      error
+    console.log(
+      "========================================"
     );
 
-    // ==========================================
-    // ROLLBACK CREDITS
-    // ==========================================
+    console.log(
+      "GENERATE IMAGE SUCCESS"
+    );
 
-    if (
-      userId &&
-      originalCredits !== null
-    ) {
-      console.log(
-        "Rolling back credits..."
-      );
+    console.log(
+      "========================================"
+    );
 
-      const {
-        error: rollbackError,
-      } = await supabaseAdmin
-        .from("profiles")
-        .update({
-          credits: originalCredits,
-        })
-        .eq("id", userId);
-
-      if (rollbackError) {
-        console.error(
-          "Credit rollback error:",
-          rollbackError
-        );
-      } else {
-        console.log(
-          "Credits successfully rolled back."
-        );
+    return NextResponse.json(
+      {
+        success: true,
+        image: publicUrl,
+        imageUrl: publicUrl,
+        creditsUsed:
+          IMAGE_COST,
+        remainingCredits:
+          newCredits,
+        model:
+          effectiveModel,
+      },
+      {
+        status: 200,
       }
-    }
+    );
+  } catch (error) {
+    // ---------------------------------------------------------
+    // 16. ERROR HANDLING
+    // ---------------------------------------------------------
 
-    // ==========================================
-    // CLEAN UP UPLOADED FILE IF NECESSARY
-    // ==========================================
+    console.error(
+      "========================================"
+    );
 
-    if (uploadedFilePath) {
-      const { error: removeError } =
-        await supabaseAdmin.storage
-          .from("generated-images")
-          .remove([uploadedFilePath]);
+    console.error(
+      "GENERATE IMAGE ERROR"
+    );
 
-      if (removeError) {
+    console.error(error);
+
+    console.error(
+      "========================================"
+    );
+
+    // ---------------------------------------------------------
+    // 17. REMOVE UPLOADED IMAGE
+    // ---------------------------------------------------------
+
+    if (uploadedStoragePath) {
+      try {
+        const {
+          error: removeError,
+        } = await supabase.storage
+          .from(
+            "generated-images"
+          )
+          .remove([
+            uploadedStoragePath,
+          ]);
+
+        if (removeError) {
+          console.error(
+            "Uploaded image removal error:",
+            removeError
+          );
+        } else {
+          console.log(
+            "Uploaded image removed."
+          );
+        }
+      } catch (removeError) {
         console.error(
-          "Storage cleanup error:",
+          "Failed to remove uploaded image:",
           removeError
         );
       }
     }
 
+    // ---------------------------------------------------------
+    // 18. ROLLBACK CREDITS
+    // ---------------------------------------------------------
+
+    if (
+      creditsDeducted &&
+      userId
+    ) {
+      try {
+        console.log(
+          "Rolling back credits..."
+        );
+
+        const {
+          data: rollbackProfile,
+          error:
+            rollbackReadError,
+        } = await supabase
+          .from("profiles")
+          .select("credits")
+          .eq(
+            "id",
+            userId
+          )
+          .single();
+
+        if (rollbackReadError) {
+          console.error(
+            "Credit rollback read error:",
+            rollbackReadError
+          );
+        } else {
+          const restoredCredits =
+            Number(
+              rollbackProfile?.credits ??
+                0
+            ) + IMAGE_COST;
+
+          const {
+            error:
+              rollbackUpdateError,
+          } = await supabase
+            .from("profiles")
+            .update({
+              credits:
+                restoredCredits,
+            })
+            .eq(
+              "id",
+              userId
+            );
+
+          if (
+            rollbackUpdateError
+          ) {
+            console.error(
+              "Credit rollback update error:",
+              rollbackUpdateError
+            );
+          } else {
+            console.log(
+              "Credits successfully rolled back."
+            );
+
+            console.log(
+              "Restored credits:",
+              restoredCredits
+            );
+          }
+        }
+      } catch (rollbackError) {
+        console.error(
+          "Credit rollback exception:",
+          rollbackError
+        );
+      }
+    }
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Something went wrong while generating the image.";
+
+    console.error(
+      "Final API error:",
+      errorMessage
+    );
+
     return NextResponse.json(
       {
         success: false,
         error:
-          error instanceof Error
-            ? error.message
-            : "Unable to generate image.",
+          errorMessage,
       },
       {
         status: 500,
