@@ -47,8 +47,16 @@ export async function getSettings(): Promise<SiteSettings> {
     .single();
 
   if (error) {
-    console.error("Get Settings Error:", error);
-    throw new Error("Unable to load settings.");
+    console.error("Get Settings Error:", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+
+    throw new Error(
+      `Unable to load settings: ${error.message}`
+    );
   }
 
   return data as SiteSettings;
@@ -70,8 +78,22 @@ export async function updateSettings(
     .single();
 
   if (error) {
-    console.error("Update Settings Error:", error);
-    throw new Error("Unable to update settings.");
+    console.error("Update Settings Error:", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+
+    throw new Error(
+      `Settings update failed: ${error.message}`
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      "Settings update returned no data."
+    );
   }
 
   return data as SiteSettings;

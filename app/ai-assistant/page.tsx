@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -9,16 +8,23 @@ import {
 } from "react";
 
 type Message = {
-  id: number;
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  created_at?: string;
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
 };
 
 const INITIAL_MESSAGE: Message = {
-  id: 1,
   role: "assistant",
   content:
-    "Hello! 👋 I'm SONET AI Assistant. How can I help you today?",
+    "👋 Hello! I'm SONET AI Assistant. How can I help you today?",
 };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -44,8 +50,14 @@ export default function AIAssistantPage() {
     INITIAL_MESSAGE,
   ]);
 
+  const [conversations, setConversations] = useState<
+    Conversation[]
+  >([]);
+
+  const [conversationId, setConversationId] =
+    useState<string | null>(null);
+
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
 
   const [selectedFile, setSelectedFile] =
     useState<File | null>(null);
@@ -54,182 +66,437 @@ export default function AIAssistantPage() {
     null
   );
 
-  const [creditsLoading, setCreditsLoading] =
+  const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] =
     useState(true);
+  const [conversationLoading, setConversationLoading] =
+    useState(false);
 
-  const [fileError, setFileError] = useState("");
+  const [sidebarOpen, setSidebarOpen] =
+    useState(false);
+
+  const [error, setError] = useState<string | null>(
+    null
+  );
+
+  const [deletingId, setDeletingId] =
+    useState<string | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(
+    null
+  );
 
   const fileInputRef =
     useRef<HTMLInputElement | null>(null);
 
-  const messagesEndRef =
-    useRef<HTMLDivElement | null>(null);
-
-  // ==========================================
-  // LOAD USER CREDITS
-  // ==========================================
-
+  /*
+   * Load user credits
+   */
   useEffect(() => {
     async function loadCredits() {
       try {
-        const response = await fetch(
-          "/api/profile",
-          {
-            method: "GET",
-            cache: "no-store",
-          }
-        );
+        const response = await fetch("/api/profile", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
 
         const data = await response.json();
 
-        if (response.ok && data) {
-          const userCredits = Number(
-            data.credits ??
-              data.profile?.credits ??
-              0
-          );
-
-          if (Number.isFinite(userCredits)) {
-            setCredits(userCredits);
-          }
+        if (
+          typeof data?.credits === "number"
+        ) {
+          setCredits(data.credits);
+        } else if (
+          typeof data?.profile?.credits === "number"
+        ) {
+          setCredits(data.profile.credits);
         }
-      } catch (error) {
+      } catch (err) {
         console.error(
-          "Unable to load credits:",
-          error
+          "Failed to load credits:",
+          err
         );
-      } finally {
-        setCreditsLoading(false);
       }
     }
 
     loadCredits();
   }, []);
 
-  // ==========================================
-  // AUTO SCROLL
-  // ==========================================
+  /*
+   * Load chat history
+   */
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
+  /*
+   * Auto-scroll
+   */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
     });
   }, [messages, loading]);
 
-  // ==========================================
-  // FILE SELECTION
-  // ==========================================
+  async function loadHistory() {
+    try {
+      setHistoryLoading(true);
 
+      const response = await fetch(
+        "/api/ai-assistant/history",
+        {
+          cache: "no-store",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to load chat history."
+        );
+      }
+
+      setConversations(
+        Array.isArray(data?.conversations)
+          ? data.conversations
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Load history error:",
+        err
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  /*
+   * Load one conversation
+   */
+  async function loadConversation(
+    id: string
+  ) {
+    if (loading || conversationLoading) {
+      return;
+    }
+
+    try {
+      setConversationLoading(true);
+      setError(null);
+
+      const response = await fetch(
+        `/api/ai-assistant/history?conversationId=${encodeURIComponent(
+          id
+        )}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to load conversation."
+        );
+      }
+
+      setConversationId(id);
+
+      const loadedMessages: Message[] =
+        Array.isArray(data?.messages)
+          ? data.messages.map(
+              (message: Message) => ({
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                created_at:
+                  message.created_at,
+              })
+            )
+          : [];
+
+      setMessages(
+        loadedMessages.length > 0
+          ? loadedMessages
+          : [INITIAL_MESSAGE]
+      );
+
+      setSelectedFile(null);
+      setInput("");
+      setSidebarOpen(false);
+    } catch (err) {
+      console.error(
+        "Load conversation error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load conversation."
+      );
+    } finally {
+      setConversationLoading(false);
+    }
+  }
+
+  /*
+   * Create a new chat
+   */
+  async function createNewChat() {
+    if (loading || conversationLoading) {
+      return;
+    }
+
+    try {
+      setError(null);
+
+      const response = await fetch(
+        "/api/ai-assistant/history",
+        {
+          method: "POST",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to create a new chat."
+        );
+      }
+
+      const newConversation =
+        data?.conversation as Conversation | undefined;
+
+      if (newConversation) {
+        setConversations((current) => [
+          newConversation,
+          ...current.filter(
+            (item) =>
+              item.id !== newConversation.id
+          ),
+        ]);
+
+        setConversationId(
+          newConversation.id
+        );
+      } else {
+        setConversationId(null);
+      }
+
+      setMessages([INITIAL_MESSAGE]);
+      setInput("");
+      setSelectedFile(null);
+      setSidebarOpen(false);
+    } catch (err) {
+      console.error(
+        "Create new chat error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to create a new chat."
+      );
+    }
+  }
+
+  /*
+   * Delete conversation
+   */
+  async function deleteConversation(
+    id: string
+  ) {
+    if (loading || deletingId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this conversation? This cannot be undone."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingId(id);
+      setError(null);
+
+      const response = await fetch(
+        `/api/ai-assistant/history?conversationId=${encodeURIComponent(
+          id
+        )}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to delete conversation."
+        );
+      }
+
+      setConversations((current) =>
+        current.filter(
+          (conversation) =>
+            conversation.id !== id
+        )
+      );
+
+      if (conversationId === id) {
+        setConversationId(null);
+        setMessages([INITIAL_MESSAGE]);
+        setInput("");
+        setSelectedFile(null);
+      }
+    } catch (err) {
+      console.error(
+        "Delete conversation error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to delete conversation."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  /*
+   * File validation
+   */
+  function validateFile(
+    file: File
+  ): string | null {
+    if (file.size > MAX_FILE_SIZE) {
+      return "File is too large. Maximum file size is 10MB.";
+    }
+
+    if (
+      !ALLOWED_FILE_TYPES.includes(
+        file.type
+      )
+    ) {
+      return "This file type is not supported.";
+    }
+
+    return null;
+  }
+
+  /*
+   * Select file
+   */
   function handleFileChange(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
-    setFileError("");
-
-    const file = event.target.files?.[0];
+    const file =
+      event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    if (file.size === 0) {
-      setFileError(
-        "The selected file is empty."
-      );
+    const validationError =
+      validateFile(file);
 
+    if (validationError) {
+      setError(validationError);
       event.target.value = "";
       return;
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      setFileError(
-        "File is too large. Maximum size is 10 MB."
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    if (
-      file.type &&
-      !ALLOWED_FILE_TYPES.includes(file.type)
-    ) {
-      setFileError(
-        "This file type is not supported."
-      );
-
-      event.target.value = "";
-      return;
-    }
-
+    setError(null);
     setSelectedFile(file);
   }
 
+  /*
+   * Remove selected file
+   */
   function removeFile() {
     setSelectedFile(null);
-    setFileError("");
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
-  // ==========================================
-  // SEND MESSAGE
-  // ==========================================
-
+  /*
+   * Send message
+   */
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
-    const message = input.trim();
-
-    if (!message || loading) {
+    if (
+      loading ||
+      !input.trim()
+    ) {
       return;
     }
 
     if (
       credits !== null &&
+      selectedFile !== null &&
       credits < 1
     ) {
-      const errorMessage: Message = {
-        id: Date.now(),
-        role: "assistant",
-        content:
-          "You don't have enough credits to use SONET AI Assistant. Please purchase more credits or upgrade your plan.",
-      };
-
-      setMessages((current) => [
-        ...current,
-        errorMessage,
-      ]);
-
+      setError(
+        "You do not have enough credits to analyze this file."
+      );
       return;
     }
 
-    const userContent = selectedFile
-      ? `${message}\n\n📎 ${selectedFile.name}`
-      : message;
+    const userMessage = input.trim();
 
-    const userMessage: Message = {
-      id: Date.now(),
+    setError(null);
+    setInput("");
+    setLoading(true);
+
+    const optimisticMessage: Message = {
       role: "user",
-      content: userContent,
+      content: selectedFile
+        ? `${userMessage}\n\n📎 ${selectedFile.name}`
+        : userMessage,
     };
 
     setMessages((current) => [
       ...current,
-      userMessage,
+      optimisticMessage,
     ]);
-
-    setInput("");
-    setLoading(true);
-    setFileError("");
 
     try {
       const formData = new FormData();
 
-      formData.append("message", message);
+      formData.append(
+        "message",
+        userMessage
+      );
+
+      if (conversationId) {
+        formData.append(
+          "conversationId",
+          conversationId
+        );
+      }
 
       if (selectedFile) {
         formData.append(
@@ -248,28 +515,21 @@ export default function AIAssistantPage() {
 
       const data = await response.json();
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
         throw new Error(
-          data.error ||
-            "Unable to get an AI response."
+          data?.error ||
+            "Something went wrong while generating a response."
         );
       }
 
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content:
-          data.answer ||
-          "I couldn't generate a response.",
-      };
-
-      setMessages((current) => [
-        ...current,
-        assistantMessage,
-      ]);
+      if (data?.conversationId) {
+        setConversationId(
+          data.conversationId
+        );
+      }
 
       if (
-        typeof data.creditsRemaining ===
+        typeof data?.creditsRemaining ===
         "number"
       ) {
         setCredits(
@@ -277,310 +537,576 @@ export default function AIAssistantPage() {
         );
       }
 
-      removeFile();
-    } catch (error) {
+      if (data?.answer) {
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content: data.answer,
+          },
+        ]);
+      }
+
+      setSelectedFile(null);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      await loadHistory();
+    } catch (err) {
       console.error(
-        "SONET AI Assistant error:",
-        error
+        "AI Assistant error:",
+        err
       );
 
-      const errorMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong. Please try again.",
-      };
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to generate a response."
+      );
 
-      setMessages((current) => [
-        ...current,
-        errorMessage,
-      ]);
+      /*
+       * Remove optimistic user message
+       * when request fails.
+       */
+      setMessages((current) => {
+        if (
+          current.length > 1 &&
+          current[current.length - 1]
+            ?.role === "user"
+        ) {
+          return current.slice(
+            0,
+            -1
+          );
+        }
+
+        return current;
+      });
     } finally {
       setLoading(false);
     }
   }
 
-  // ==========================================
-  // CLEAR CHAT
-  // ==========================================
-
-  function handleClearChat() {
-    setMessages([
-      {
-        id: Date.now(),
-        role: "assistant",
-        content:
-          "Chat cleared. How can I help you?",
-      },
-    ]);
-
-    setInput("");
-    removeFile();
-  }
-
-  const cannotSend =
+  /*
+   * STRICT BOOLEAN
+   *
+   * This is the TypeScript fix for:
+   * boolean | null
+   */
+  const cannotSend = Boolean(
     loading ||
-    !input.trim() ||
-    (credits !== null && credits < 1);
+      !input.trim() ||
+      (credits !== null &&
+        selectedFile !== null &&
+        credits < 1)
+  );
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+      <div className="flex min-h-screen">
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            onClick={() =>
+              setSidebarOpen(false)
+            }
+            className="fixed inset-0 z-30 bg-black/60 lg:hidden"
+          />
+        )}
 
-        {/* ======================================
-            HEADER
-        ====================================== */}
-
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-2xl">
-              🤖
-            </div>
-
+        {/* Sidebar */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-40 flex w-[300px] flex-col border-r border-white/10 bg-slate-950/95 backdrop-blur-xl transition-transform duration-300 lg:static lg:z-auto lg:translate-x-0 ${
+            sidebarOpen
+              ? "translate-x-0"
+              : "-translate-x-full"
+          }`}
+        >
+          {/* Sidebar header */}
+          <div className="flex items-center justify-between border-b border-white/10 px-5 py-5">
             <div>
-              <h1 className="text-2xl font-bold sm:text-3xl">
-                SONET AI Assistant
-              </h1>
-
-              <p className="text-sm text-slate-400">
-                Your AI creative and business assistant
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-
-            {/* CREDIT DISPLAY */}
-
-            <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm">
-              <span className="text-slate-400">
-                Credits:
-              </span>{" "}
-
-              <span className="font-bold text-cyan-400">
-                {creditsLoading
-                  ? "..."
-                  : credits ?? 0}
-              </span>
+              <div className="text-lg font-black tracking-tight">
+                SONET AI
+              </div>
+              <div className="text-xs font-medium text-slate-400">
+                Assistant
+              </div>
             </div>
 
             <button
               type="button"
-              onClick={handleClearChat}
-              disabled={loading}
-              className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-cyan-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() =>
+                setSidebarOpen(false)
+              }
+              className="rounded-xl p-2 text-slate-400 hover:bg-white/10 hover:text-white lg:hidden"
             >
-              Clear Chat
+              ✕
             </button>
           </div>
-        </div>
 
-        {/* ======================================
-            CHAT
-        ====================================== */}
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl">
-
-          {/* MESSAGES */}
-
-          <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
-
-            {messages.map((message) => {
-              const isUser =
-                message.role === "user";
-
-              return (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    isUser
-                      ? "justify-end"
-                      : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[90%] rounded-2xl px-4 py-3 sm:max-w-[75%] ${
-                      isUser
-                        ? "bg-cyan-600 text-white"
-                        : "border border-slate-700 bg-slate-800 text-slate-100"
-                    }`}
-                  >
-                    {!isUser && (
-                      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-cyan-400">
-                        SONET AI
-                      </div>
-                    )}
-
-                    <div className="whitespace-pre-wrap text-sm leading-7">
-                      {message.content}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* LOADING */}
-
-            {loading && (
-              <div className="flex justify-start">
-                <div className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <span>
-                      SONET AI is thinking
-                    </span>
-
-                    <span className="flex gap-1">
-                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400" />
-
-                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-
-                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
+          {/* New Chat */}
+          <div className="p-4">
+            <button
+              type="button"
+              onClick={createNewChat}
+              disabled={
+                loading ||
+                conversationLoading
+              }
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-4 py-3.5 text-sm font-bold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="text-lg">
+                +
+              </span>
+              New Chat
+            </button>
           </div>
 
-          {/* ======================================
-              INPUT AREA
-          ====================================== */}
+          {/* History title */}
+          <div className="px-5 pb-3">
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              Chat History
+            </div>
+          </div>
 
-          <div className="border-t border-slate-800 bg-slate-950/70 p-4 sm:p-6">
+          {/* Conversations */}
+          <div className="flex-1 overflow-y-auto px-3 pb-5">
+            {historyLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4].map(
+                  (item) => (
+                    <div
+                      key={item}
+                      className="h-12 animate-pulse rounded-xl bg-white/5"
+                    />
+                  )
+                )}
+              </div>
+            ) : conversations.length ===
+              0 ? (
+              <div className="px-3 py-10 text-center">
+                <div className="mb-3 text-3xl">
+                  💬
+                </div>
 
-            {/* FILE ERROR */}
+                <p className="text-sm font-semibold text-slate-400">
+                  No conversations yet
+                </p>
 
-            {fileError && (
-              <div className="mb-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                {fileError}
+                <p className="mt-1 text-xs text-slate-600">
+                  Start a new chat to begin.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {conversations.map(
+                  (conversation) => {
+                    const active =
+                      conversation.id ===
+                      conversationId;
+
+                    return (
+                      <div
+                        key={
+                          conversation.id
+                        }
+                        className={`group flex items-center gap-2 rounded-xl border transition ${
+                          active
+                            ? "border-cyan-400/20 bg-cyan-400/10"
+                            : "border-transparent hover:bg-white/5"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            loadConversation(
+                              conversation.id
+                            )
+                          }
+                          disabled={
+                            loading ||
+                            conversationLoading
+                          }
+                          className="min-w-0 flex-1 px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <div
+                            className={`truncate text-sm font-semibold ${
+                              active
+                                ? "text-cyan-300"
+                                : "text-slate-300"
+                            }`}
+                          >
+                            {conversation.title ||
+                              "New Chat"}
+                          </div>
+
+                          <div className="mt-1 text-[10px] text-slate-600">
+                            {new Date(
+                              conversation.updated_at
+                            ).toLocaleDateString()}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            deleteConversation(
+                              conversation.id
+                            )
+                          }
+                          disabled={
+                            loading ||
+                            deletingId ===
+                              conversation.id
+                          }
+                          aria-label="Delete conversation"
+                          className="mr-2 rounded-lg p-2 text-slate-600 opacity-0 transition hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 disabled:opacity-30"
+                        >
+                          {deletingId ===
+                          conversation.id
+                            ? "..."
+                            : "🗑️"}
+                        </button>
+                      </div>
+                    );
+                  }
+                )}
               </div>
             )}
+          </div>
 
-            {/* SELECTED FILE */}
+          {/* Credits */}
+          <div className="border-t border-white/10 p-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400">
+                  Credits
+                </span>
 
-            {selectedFile && (
-              <div className="mb-3 flex items-center justify-between rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3">
+                <span className="font-bold text-cyan-300">
+                  {credits === null
+                    ? "—"
+                    : credits.toLocaleString()}
+                </span>
+              </div>
 
+              <div className="mt-2 text-[11px] leading-5 text-slate-500">
+                File analysis may use credits
+                according to your current
+                plan settings.
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* Main content */}
+        <section className="flex min-h-screen min-w-0 flex-1 flex-col">
+          {/* Header */}
+          <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/85 backdrop-blur-xl">
+            <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSidebarOpen(true)
+                  }
+                  className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10 lg:hidden"
+                  aria-label="Open chat history"
+                >
+                  ☰
+                </button>
+
+                <div>
+                  <h1 className="text-lg font-black tracking-tight sm:text-xl">
+                    SONET AI Assistant
+                  </h1>
+
+                  <p className="hidden text-xs text-slate-500 sm:block">
+                    Your intelligent creative
+                    assistant
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-xs font-bold text-cyan-300">
+                  {credits === null
+                    ? "Credits: —"
+                    : `Credits: ${credits.toLocaleString()}`}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Chat */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+              {/* Conversation loading */}
+              {conversationLoading && (
+                <div className="mb-5 flex justify-center">
+                  <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-400">
+                    Loading conversation...
+                  </div>
+                </div>
+              )}
+
+              {/* Messages */}
+              <div className="space-y-6">
+                {messages.map(
+                  (message, index) => {
+                    const isUser =
+                      message.role ===
+                      "user";
+
+                    return (
+                      <div
+                        key={
+                          message.id ||
+                          `${message.role}-${index}`
+                        }
+                        className={`flex ${
+                          isUser
+                            ? "justify-end"
+                            : "justify-start"
+                        }`}
+                      >
+                        <div
+                          className={`flex max-w-[92%] items-start gap-3 sm:max-w-[82%] ${
+                            isUser
+                              ? "flex-row-reverse"
+                              : ""
+                          }`}
+                        >
+                          {/* Avatar */}
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${
+                              isUser
+                                ? "bg-cyan-500 text-slate-950"
+                                : "border border-white/10 bg-white/5 text-cyan-300"
+                            }`}
+                          >
+                            {isUser
+                              ? "U"
+                              : "S"}
+                          </div>
+
+                          {/* Bubble */}
+                          <div
+                            className={`rounded-2xl px-4 py-3.5 shadow-xl ${
+                              isUser
+                                ? "rounded-tr-md bg-cyan-500 text-slate-950"
+                                : "rounded-tl-md border border-white/10 bg-white/[0.045] text-slate-200"
+                            }`}
+                          >
+                            <div className="whitespace-pre-wrap break-words text-sm leading-7">
+                              {
+                                message.content
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                )}
+
+                {/* Loading response */}
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-black text-cyan-300">
+                        S
+                      </div>
+
+                      <div className="rounded-2xl rounded-tl-md border border-white/10 bg-white/[0.045] px-5 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-300" />
+                          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-300 [animation-delay:120ms]" />
+                          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-300 [animation-delay:240ms]" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="px-4 pb-3 sm:px-6 lg:px-8">
+              <div className="mx-auto flex max-w-5xl items-start justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <span>
+                  {error}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setError(null)
+                  }
+                  className="shrink-0 text-red-300 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Selected file */}
+          {selectedFile && (
+            <div className="px-4 pb-3 sm:px-6 lg:px-8">
+              <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="text-xl">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10">
                     📎
-                  </span>
+                  </div>
 
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">
+                    <div className="truncate text-sm font-semibold text-slate-200">
                       {selectedFile.name}
-                    </p>
+                    </div>
 
-                    <p className="text-xs text-slate-400">
+                    <div className="text-xs text-slate-500">
                       {(
                         selectedFile.size /
                         1024 /
                         1024
                       ).toFixed(2)}{" "}
                       MB
-                    </p>
+                    </div>
                   </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={removeFile}
-                  disabled={loading}
-                  className="ml-3 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                  className="rounded-xl px-3 py-2 text-xs font-bold text-slate-400 hover:bg-white/10 hover:text-white"
                 >
-                  ✕
+                  Remove
                 </button>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* FORM */}
-
+          {/* Composer */}
+          <div className="border-t border-white/10 bg-slate-950/95 px-4 py-4 sm:px-6 lg:px-8">
             <form
               onSubmit={handleSubmit}
-              className="flex flex-col gap-3"
+              className="mx-auto max-w-5xl"
             >
+              <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-2 shadow-2xl shadow-black/20 focus-within:border-cyan-400/30">
+                <div className="flex items-end gap-2">
+                  {/* File upload */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      fileInputRef.current?.click()
+                    }
+                    disabled={loading}
+                    aria-label="Attach file"
+                    className="mb-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xl text-slate-400 transition hover:bg-white/10 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    📎
+                  </button>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept={[
+                      ".png",
+                      ".jpg",
+                      ".jpeg",
+                      ".webp",
+                      ".pdf",
+                      ".txt",
+                      ".csv",
+                      ".json",
+                      ".doc",
+                      ".docx",
+                      ".xls",
+                      ".xlsx",
+                      ".ppt",
+                      ".pptx",
+                    ].join(",")}
+                    onChange={
+                      handleFileChange
+                    }
+                  />
 
-                {/* UPLOAD */}
+                  {/* Textarea */}
+                  <textarea
+                    value={input}
+                    onChange={(event) =>
+                      setInput(
+                        event.target.value
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (
+                        event.key ===
+                          "Enter" &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={ALLOWED_FILE_TYPES.join(",")}
-                  onChange={handleFileChange}
-                  disabled={loading}
-                  className="hidden"
-                />
+                        if (
+                          !cannotSend
+                        ) {
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }
+                    }}
+                    disabled={loading}
+                    rows={1}
+                    placeholder="Message SONET AI Assistant..."
+                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-2 py-3 text-sm leading-6 text-white outline-none placeholder:text-slate-600 disabled:cursor-not-allowed"
+                  />
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    fileInputRef.current?.click()
-                  }
-                  disabled={loading}
-                  title="Upload file"
-                  className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  📎 Upload
-                </button>
-
-                {/* MESSAGE */}
-
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(event) =>
-                    setInput(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Ask SONET AI anything..."
-                  disabled={loading}
-                  autoComplete="off"
-                  className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-5 py-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
-                />
-
-                {/* SEND */}
-
-                <button
-                  type="submit"
-                  disabled={cannotSend}
-                  className="rounded-2xl bg-cyan-600 px-7 py-4 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {loading
-                    ? "Thinking..."
-                    : "Send"}
-                </button>
+                  {/* Send */}
+                  <button
+                    type="submit"
+                    disabled={
+                      cannotSend
+                    }
+                    className="mb-1 flex h-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-500 px-5 text-sm font-bold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {loading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950/30 border-t-slate-950" />
+                        <span className="hidden sm:inline">
+                          Thinking
+                        </span>
+                      </span>
+                    ) : (
+                      <>
+                        <span className="hidden sm:inline">
+                          Send
+                        </span>
+                        <span className="sm:hidden">
+                          ↑
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
+              <div className="mt-2 px-2 text-center text-[10px] leading-5 text-slate-600">
+                SONET AI can make mistakes.
+                Check important information
+                before relying on it.
+              </div>
             </form>
-
-            {/* CREDIT NOTICE */}
-
-            <p className="mt-3 text-center text-xs text-slate-500">
-              Each Assistant request uses{" "}
-              <span className="font-semibold text-cyan-400">
-                1 credit
-              </span>
-              . Upload an image or supported document
-              for SONET AI to analyze.
-            </p>
-
-            {credits !== null &&
-              credits < 1 && (
-                <p className="mt-2 text-center text-xs font-semibold text-red-400">
-                  You need at least 1 credit to use
-                  SONET AI Assistant.
-                </p>
-              )}
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );

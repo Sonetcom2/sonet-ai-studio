@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -6,6 +5,7 @@ import { generateAIText } from "@/services/aiService";
 import { getSettings } from "@/services/settingsService";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_HISTORY_MESSAGES = 30;
 
 const ALLOWED_FILE_TYPES = [
   "image/png",
@@ -30,7 +30,6 @@ function getSafeAssistantError(error: unknown): string {
 
   const message = error.message.toLowerCase();
 
-  // Never expose OpenAI/provider billing or API errors to users.
   if (
     message.includes("429") ||
     message.includes("rate limit") ||
@@ -43,7 +42,6 @@ function getSafeAssistantError(error: unknown): string {
     return "SONET AI is temporarily unavailable. Please try again later.";
   }
 
-  // Hide authentication/API-key/provider configuration details.
   if (
     message.includes("api key") ||
     message.includes("authentication") ||
@@ -53,7 +51,6 @@ function getSafeAssistantError(error: unknown): string {
     return "SONET AI is temporarily unavailable. Please try again later.";
   }
 
-  // Hide internal/server implementation details.
   if (
     message.includes("supabase") ||
     message.includes("database") ||
@@ -65,6 +62,20 @@ function getSafeAssistantError(error: unknown): string {
   return "SONET AI was unable to complete your request. Please try again.";
 }
 
+function createConversationTitle(message: string) {
+  const cleaned = message
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return "New Chat";
+  }
+
+  return cleaned.length > 45
+    ? `${cleaned.slice(0, 45)}...`
+    : cleaned;
+}
+
 export async function POST(req: Request) {
   let userId: string | null = null;
   let originalCredits: number | null = null;
@@ -73,7 +84,7 @@ export async function POST(req: Request) {
 
   try {
     // ==========================================
-    // 1. AUTHENTICATE USER
+    // 1. AUTHENTICATE
     // ==========================================
 
     const supabase = await createClient();
@@ -86,7 +97,8 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "Please log in to use SONET AI Assistant.",
+          error:
+            "Please log in to use SONET AI Assistant.",
         },
         { status: 401 }
       );
@@ -102,6 +114,10 @@ export async function POST(req: Request) {
 
     const message = String(
       formData.get("message") ?? ""
+    ).trim();
+
+    const conversationIdValue = String(
+      formData.get("conversationId") ?? ""
     ).trim();
 
     const fileValue = formData.get("file");
@@ -228,7 +244,110 @@ export async function POST(req: Request) {
     originalCredits = currentCredits;
 
     // ==========================================
-    // 7. ONLY CHARGE WHEN FILE IS USED
+    // 7. LOAD / CREATE CONVERSATION
+    // ==========================================
+
+    let conversationId =
+      conversationIdValue || null;
+
+    if (conversationId) {
+      const {
+        data: conversation,
+        error: conversationError,
+      } = await supabaseAdmin
+        .from("ai_conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (
+        conversationError ||
+        !conversation
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Conversation not found.",
+          },
+          { status: 404 }
+        );
+      }
+    } else {
+      const { data: newConversation, error } =
+        await supabaseAdmin
+          .from("ai_conversations")
+          .insert({
+            user_id: user.id,
+            title: createConversationTitle(
+              message
+            ),
+          })
+          .select("id")
+          .single();
+
+      if (error || !newConversation) {
+        console.error(
+          "Create AI Conversation Error:",
+          error
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Unable to create your conversation.",
+          },
+          { status: 500 }
+        );
+      }
+
+      conversationId = newConversation.id;
+    }
+
+    // ==========================================
+    // 8. LOAD PREVIOUS MESSAGES
+    // ==========================================
+
+    const {
+      data: previousMessages,
+      error: historyError,
+    } = await supabaseAdmin
+      .from("ai_messages")
+      .select("role, content")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id)
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(MAX_HISTORY_MESSAGES);
+
+    if (historyError) {
+      console.error(
+        "AI Conversation History Error:",
+        historyError
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Unable to load conversation history.",
+        },
+        { status: 500 }
+      );
+    }
+
+    const history =
+      previousMessages
+        ?.reverse()
+        .map((item) => ({
+          role: item.role,
+          content: item.content,
+        })) ?? [];
+
+    // ==========================================
+    // 9. ONLY CHARGE WHEN FILE IS USED
     // ==========================================
 
     if (file && assistantCost > 0) {
@@ -281,13 +400,13 @@ export async function POST(req: Request) {
     }
 
     // ==========================================
-    // 8. BUILD AI REQUEST
+    // 10. BUILD CURRENT REQUEST
     // ==========================================
 
-    let userPrompt = message;
+    let currentUserPrompt = message;
 
     if (file) {
-      userPrompt += `
+      currentUserPrompt += `
 
 The user has uploaded a file named "${file.name}".
 File type: ${file.type}.
@@ -302,7 +421,7 @@ seen its contents.
     }
 
     // ==========================================
-    // 9. SYSTEM PROMPT
+    // 11. SYSTEM PROMPT
     // ==========================================
 
     const systemPrompt = `
@@ -332,6 +451,10 @@ You can help users with:
 
 Be professional, friendly, concise, and helpful.
 
+Maintain continuity with the conversation history.
+When the user refers to something discussed earlier,
+use the previous messages to understand what they mean.
+
 When helping with prompts, make them detailed and
 production-ready.
 
@@ -348,28 +471,105 @@ billing information, or private data.
 `;
 
     // ==========================================
-    // 10. GENERATE RESPONSE
+    // 12. BUILD AI INPUT WITH HISTORY
+    // ==========================================
+
+    const aiInput = [
+      ...history,
+      {
+        role: "user",
+        content: currentUserPrompt,
+      },
+    ]
+      .map(
+        (item) =>
+          `${item.role === "user" ? "USER" : "SONET AI"}: ${item.content}`
+      )
+      .join("\n\n");
+
+    // ==========================================
+    // 13. GENERATE RESPONSE
     // ==========================================
 
     const answer = await generateAIText({
       systemPrompt,
-      userPrompt,
+      userPrompt: currentUserPrompt,
+      input: aiInput,
       model: "gpt-5-mini",
       maxOutputTokens: 2000,
     });
 
     // ==========================================
-    // 11. SUCCESS
+    // 14. SAVE USER MESSAGE
+    // ==========================================
+
+    const { error: userMessageError } =
+      await supabaseAdmin
+        .from("ai_messages")
+        .insert({
+          conversation_id: conversationId,
+          user_id: user.id,
+          role: "user",
+          content: userContentForHistory(
+            message,
+            file
+          ),
+        });
+
+    if (userMessageError) {
+      console.error(
+        "Save AI User Message Error:",
+        userMessageError
+      );
+    }
+
+    // ==========================================
+    // 15. SAVE ASSISTANT MESSAGE
+    // ==========================================
+
+    const { error: assistantMessageError } =
+      await supabaseAdmin
+        .from("ai_messages")
+        .insert({
+          conversation_id: conversationId,
+          user_id: user.id,
+          role: "assistant",
+          content: answer,
+        });
+
+    if (assistantMessageError) {
+      console.error(
+        "Save AI Assistant Message Error:",
+        assistantMessageError
+      );
+    }
+
+    // ==========================================
+    // 16. UPDATE CONVERSATION
+    // ==========================================
+
+    await supabaseAdmin
+      .from("ai_conversations")
+      .update({
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId)
+      .eq("user_id", user.id);
+
+    // ==========================================
+    // 17. SUCCESS
     // ==========================================
 
     const creditsRemaining =
-      creditsDeducted && originalCredits !== null
+      creditsDeducted &&
+      originalCredits !== null
         ? originalCredits - assistantCost
         : originalCredits;
 
     return NextResponse.json({
       success: true,
       answer,
+      conversationId,
       fileUsed: Boolean(file),
       creditsUsed: creditsDeducted
         ? assistantCost
@@ -377,16 +577,13 @@ billing information, or private data.
       creditsRemaining,
     });
   } catch (error) {
-    // IMPORTANT:
-    // Log the real provider error on the SERVER only.
-    // Never return error.message directly to the user.
     console.error(
       "SONET AI Assistant Error:",
       error
     );
 
     // ==========================================
-    // 12. ROLLBACK CREDIT IF AI FAILED
+    // ROLLBACK CREDIT
     // ==========================================
 
     if (
@@ -419,10 +616,6 @@ billing information, or private data.
       }
     }
 
-    // ==========================================
-    // 13. SAFE CUSTOMER-FACING ERROR
-    // ==========================================
-
     return NextResponse.json(
       {
         success: false,
@@ -432,4 +625,15 @@ billing information, or private data.
       { status: 500 }
     );
   }
+}
+
+function userContentForHistory(
+  message: string,
+  file: File | null
+) {
+  if (!file) {
+    return message;
+  }
+
+  return `${message}\n\n📎 ${file.name}`;
 }

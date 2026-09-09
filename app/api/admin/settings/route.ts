@@ -60,6 +60,10 @@ export async function PUT(req: Request) {
       voice_generation_cost: Number(
         body.voice_generation_cost
       ),
+
+      assistant_generation_cost: Number(
+        body.assistant_generation_cost
+      ),
     });
 
     return NextResponse.json({
