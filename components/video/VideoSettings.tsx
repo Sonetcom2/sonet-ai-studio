@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 type VideoSettingsProps = {
   style: string;
@@ -39,12 +39,13 @@ const cameras = [
   "Tracking Shot",
 ];
 
-/*
- * Ray 2 currently supports 5 and 9 seconds.
- */
 const durations = [
   "5 sec",
-  "9 sec",
+  "10 sec",
+  "15 sec",
+  "20 sec",
+  "25 sec",
+  "30 sec",
 ];
 
 const ratios = [
@@ -53,13 +54,6 @@ const ratios = [
   "1:1",
 ];
 
-/*
- * ray-2-720p is a 720p model.
- * 1080P is therefore not offered as a native model setting.
- *
- * We keep the existing resolution state because the application
- * may use it elsewhere, but only expose the supported model level.
- */
 const resolutions = [
   "720P",
 ];
@@ -97,7 +91,7 @@ export default function VideoSettings({
   }) {
     return (
       <div className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
-        <h3 className="mb-5 text-lg font-bold">
+        <h3 className="mb-5 text-lg font-bold text-white">
           {title}
         </h3>
 
@@ -110,7 +104,7 @@ export default function VideoSettings({
               className={`rounded-xl px-4 py-3 font-semibold transition ${
                 value === option
                   ? "bg-cyan-500 text-white"
-                  : "bg-slate-800 hover:bg-slate-700"
+                  : "bg-slate-800 text-slate-200 hover:bg-slate-700"
               }`}
             >
               {option}
@@ -124,46 +118,57 @@ export default function VideoSettings({
   return (
     <section className="space-y-6">
       <Selector
-        title="🎨 Video Style"
+        title="Video Style"
         options={styles}
         value={style}
         onChange={setStyle}
       />
 
       <Selector
-        title="🎥 Camera Movement"
+        title="Camera Movement"
         options={cameras}
         value={camera}
         onChange={setCamera}
       />
 
       <Selector
-        title="⏱ Duration"
+        title="Duration"
         options={durations}
         value={duration}
         onChange={setDuration}
       />
 
       <Selector
-        title="📺 Aspect Ratio"
+        title="Aspect Ratio"
         options={ratios}
         value={aspectRatio}
         onChange={setAspectRatio}
       />
 
       <Selector
-        title="🖥 Resolution"
+        title="Resolution"
         options={resolutions}
         value={resolution}
         onChange={setResolution}
       />
 
       <Selector
-        title="⭐ Quality"
+        title="Quality"
         options={qualities}
         value={quality}
         onChange={setQuality}
       />
+
+      <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-5">
+        <p className="text-sm font-semibold text-cyan-300">
+          Audio generation is enabled
+        </p>
+
+        <p className="mt-1 text-sm text-slate-300">
+          Your generated videos include synchronised AI audio
+          when supported by the selected generation model.
+        </p>
+      </div>
     </section>
   );
 }
