@@ -6,6 +6,11 @@ export type VideoGenerationOptions = {
   aspectRatio: string;
   resolution: string;
   quality: string;
+
+  // Optional reference image URL.
+  // This will be passed to the video provider
+  // after the API uploads the user's image.
+  referenceImage?: string;
 };
 
 export type VideoGenerationResult = {
