@@ -15,23 +15,15 @@ import { getRecentVideos } from "@/services/videoHistoryService";
 export default function AIVideoPage() {
   const supabase = createClient();
 
-  // ============================
-  // USER
-  // ============================
-
   const [fullName, setFullName] = useState("Creator");
   const [plan, setPlan] = useState("FREE");
   const [credits, setCredits] = useState(0);
 
-  // ============================
-  // PROMPT
-  // ============================
-
   const [prompt, setPrompt] = useState("");
 
-  // ============================
-  // VIDEO SETTINGS
-  // ============================
+  // Reference image used by the Video Studio
+  const [referenceImage, setReferenceImage] =
+    useState<string | null>(null);
 
   const [style, setStyle] = useState("Cinematic");
   const [camera, setCamera] = useState("Static");
@@ -40,21 +32,9 @@ export default function AIVideoPage() {
   const [resolution, setResolution] = useState("720P");
   const [quality, setQuality] = useState("Balanced");
 
-  // ============================
-  // GENERATION
-  // ============================
-
   const [generating, setGenerating] = useState(false);
 
-  // ============================
-  // VIDEO HISTORY
-  // ============================
-
   const [videos, setVideos] = useState<any[]>([]);
-
-  // ============================
-  // LOAD USER PROFILE
-  // ============================
 
   async function loadProfile() {
     try {
@@ -112,10 +92,6 @@ export default function AIVideoPage() {
     }
   }
 
-  // ============================
-  // LOAD VIDEO HISTORY
-  // ============================
-
   async function loadVideos() {
     try {
       const history = await getRecentVideos();
@@ -131,18 +107,10 @@ export default function AIVideoPage() {
     }
   }
 
-  // ============================
-  // INITIAL LOAD
-  // ============================
-
   useEffect(() => {
     loadProfile();
     loadVideos();
   }, []);
-
-  // ============================
-  // GENERATE VIDEO
-  // ============================
 
   async function handleGenerate() {
     if (!prompt.trim()) {
@@ -177,6 +145,10 @@ export default function AIVideoPage() {
             aspectRatio,
             resolution,
             quality,
+
+            // Reference image is now available
+            // for the next API/provider integration step.
+            referenceImage,
           }),
         }
       );
@@ -195,7 +167,6 @@ export default function AIVideoPage() {
         );
       }
 
-      // Update credits immediately
       if (
         typeof result.creditsRemaining ===
         "number"
@@ -207,7 +178,6 @@ export default function AIVideoPage() {
         await loadProfile();
       }
 
-      // Refresh history
       await loadVideos();
 
       alert(
@@ -231,15 +201,10 @@ export default function AIVideoPage() {
     }
   }
 
-  // ============================
-  // RENDER
-  // ============================
-
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-black text-white">
       <div className="mx-auto max-w-7xl space-y-10 px-6 py-10">
 
-        {/* HERO */}
         <VideoHero
           fullName={fullName}
           plan={plan}
@@ -247,21 +212,23 @@ export default function AIVideoPage() {
           totalVideos={videos.length}
         />
 
-        {/* STEP PROGRESS */}
         <StepProgress currentStep={1} />
 
-        {/* PROMPT */}
         <PromptEditor
           prompt={prompt}
           setPrompt={setPrompt}
+          referenceImage={referenceImage}
+          setReferenceImage={setReferenceImage}
         />
 
-        {/* AI DIRECTOR */}
         <DirectorRecommendation
           onApply={() => {
             setStyle("Cinematic");
             setCamera("Tracking Shot");
-            setQuality("High");
+
+            // VideoSettings supports Fast,
+            // Balanced and Premium.
+            setQuality("Premium");
 
             alert(
               "✨ AI Recommendation Applied!"
@@ -269,7 +236,6 @@ export default function AIVideoPage() {
           }}
         />
 
-        {/* SETTINGS + GENERATE */}
         <div className="grid gap-8 lg:grid-cols-2">
 
           <VideoSettings
@@ -296,7 +262,6 @@ export default function AIVideoPage() {
 
         </div>
 
-        {/* RECENT VIDEOS */}
         <RecentVideos videos={videos} />
 
       </div>
