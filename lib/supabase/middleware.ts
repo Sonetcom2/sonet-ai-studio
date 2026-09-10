@@ -2,9 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export async function updateSession(
-  request: NextRequest
-) {
+export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request,
   });
@@ -45,7 +43,7 @@ export async function updateSession(
 
   const {
     data: { user },
-    error: authError,
+    error,
   } = await supabase.auth.getUser();
 
   console.log(
@@ -53,10 +51,10 @@ export async function updateSession(
     user?.email ?? null
   );
 
-  if (authError) {
+  if (error) {
     console.log(
       "MIDDLEWARE AUTH ERROR:",
-      authError.message
+      error.message
     );
   }
 
@@ -85,22 +83,22 @@ export async function updateSession(
   }
 
   /*
-   * Admin routes must remain accessible.
-   * requireAdmin() handles administrator authorization.
+   * Admin routes are handled by requireAdmin().
+   * Do not block them with maintenance mode.
    */
   const isAdminRoute =
     pathname === "/admin" ||
     pathname.startsWith("/admin/");
 
   /*
-   * Maintenance page must always be accessible.
+   * Maintenance page must always remain accessible.
    */
   const isMaintenancePage =
     pathname === "/maintenance" ||
     pathname.startsWith("/maintenance/");
 
   /*
-   * Never redirect API routes to maintenance.
+   * API routes must not be redirected to maintenance.
    */
   const isApiRoute =
     pathname === "/api" ||
@@ -114,15 +112,17 @@ export async function updateSession(
     !isMaintenancePage &&
     !isApiRoute
   ) {
-    const { data: settings, error } =
-      await supabaseAdmin
-        .from("settings")
-        .select("maintenance_mode")
-        .limit(1)
-        .single();
+    const {
+      data: settings,
+      error: settingsError,
+    } = await supabaseAdmin
+      .from("settings")
+      .select("maintenance_mode")
+      .limit(1)
+      .single();
 
     if (
-      !error &&
+      !settingsError &&
       settings?.maintenance_mode === true
     ) {
       return NextResponse.redirect(
