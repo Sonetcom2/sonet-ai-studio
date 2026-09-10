@@ -130,30 +130,90 @@ export default function AIVideoPage() {
     setGenerating(true);
 
     try {
+      const formData = new FormData();
+
+      formData.append(
+        "prompt",
+        prompt.trim()
+      );
+
+      formData.append(
+        "style",
+        style
+      );
+
+      formData.append(
+        "camera",
+        camera
+      );
+
+      formData.append(
+        "duration",
+        duration
+      );
+
+      formData.append(
+        "aspectRatio",
+        aspectRatio
+      );
+
+      formData.append(
+        "resolution",
+        resolution
+      );
+
+      formData.append(
+        "quality",
+        quality
+      );
+
+      /*
+       * Convert the selected reference image
+       * from its data URL into a real File.
+       *
+       * The API expects the reference image
+       * as multipart/form-data.
+       */
+      if (referenceImage) {
+        const imageResponse =
+          await fetch(referenceImage);
+
+        if (!imageResponse.ok) {
+          throw new Error(
+            "Unable to prepare the reference image."
+          );
+        }
+
+        const imageBlob =
+          await imageResponse.blob();
+
+        const referenceFile =
+          new File(
+            [imageBlob],
+            "reference-image.png",
+            {
+              type:
+                imageBlob.type ||
+                "image/png",
+            }
+          );
+
+        formData.append(
+          "referenceImage",
+          referenceFile
+        );
+      }
+
       const response = await fetch(
         "/api/generate-video",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            prompt,
-            style,
-            camera,
-            duration,
-            aspectRatio,
-            resolution,
-            quality,
-
-            // Reference image is now available
-            // for the next API/provider integration step.
-            referenceImage,
-          }),
+          body: formData,
         }
       );
 
-      const result = await response.json();
+      const result =
+        await response.json();
 
       console.log(
         "SONET AI Video Response:",
@@ -182,7 +242,7 @@ export default function AIVideoPage() {
 
       alert(
         result.message ||
-          "Video generation started successfully."
+          "Video generated successfully."
       );
     } catch (error) {
       console.error(
@@ -195,7 +255,9 @@ export default function AIVideoPage() {
           ? error.message
           : "Unable to generate video.";
 
-      alert(`❌ ${message}`);
+      alert(
+        `❌ ${message}`
+      );
     } finally {
       setGenerating(false);
     }
@@ -262,7 +324,9 @@ export default function AIVideoPage() {
 
         </div>
 
-        <RecentVideos videos={videos} />
+        <RecentVideos
+          videos={videos}
+        />
 
       </div>
     </main>
