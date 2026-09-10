@@ -193,6 +193,28 @@ export class ReplicateVideoProvider
         watermark: false,
       };
 
+      // ==========================================
+      // OPTIONAL REFERENCE IMAGE
+      // ==========================================
+
+      if (
+        options.referenceImage &&
+        options.referenceImage.trim()
+      ) {
+        input.image =
+          options.referenceImage;
+
+        console.log(
+          "Reference image:",
+          "provided"
+        );
+      } else {
+        console.log(
+          "Reference image:",
+          "not provided"
+        );
+      }
+
       console.log(
         "Replicate model:",
         "bytedance/seedance-2.5"
@@ -228,6 +250,9 @@ export class ReplicateVideoProvider
         {
           ...input,
           prompt: "[REDACTED]",
+          image: options.referenceImage
+            ? "[REFERENCE IMAGE]"
+            : undefined,
         }
       );
 
@@ -267,7 +292,8 @@ export class ReplicateVideoProvider
 
       if (
         !videoUrl &&
-        typeof output === "string"
+        typeof output ===
+          "string"
       ) {
         videoUrl = output;
       }
