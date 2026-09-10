@@ -5,14 +5,30 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 
 import { ReplicateVideoProvider } from "@/providers/replicate/videoProvider";
 
-import { VideoGenerationRequest } from "@/types/video";
-
 import {
   getUserCredits,
   deductCredits,
 } from "@/services/creditService";
 
 import { getSettings } from "@/services/settingsService";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+async function fileToDataUrl(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  return `data:${file.type};base64,${buffer.toString("base64")}`;
+}
 
 export async function POST(req: NextRequest) {
   let userId: string | null = null;
@@ -72,13 +88,27 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 3. READ REQUEST BODY
+    // 3. READ MULTIPART FORM DATA
     // ==========================================
 
-    const body: VideoGenerationRequest =
-      await req.json();
+    const formData = await req.formData();
 
-    if (!body.prompt || !body.prompt.trim()) {
+    const promptValue = formData.get("prompt");
+    const styleValue = formData.get("style");
+    const cameraValue = formData.get("camera");
+    const durationValue = formData.get("duration");
+    const aspectRatioValue =
+      formData.get("aspectRatio");
+    const resolutionValue =
+      formData.get("resolution");
+    const qualityValue = formData.get("quality");
+
+    const prompt =
+      typeof promptValue === "string"
+        ? promptValue.trim()
+        : "";
+
+    if (!prompt) {
       return NextResponse.json(
         {
           success: false,
@@ -90,13 +120,101 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const style =
+      typeof styleValue === "string"
+        ? styleValue
+        : "";
+
+    const camera =
+      typeof cameraValue === "string"
+        ? cameraValue
+        : "";
+
+    const duration =
+      typeof durationValue === "string"
+        ? durationValue
+        : "";
+
+    const aspectRatio =
+      typeof aspectRatioValue === "string"
+        ? aspectRatioValue
+        : "";
+
+    const resolution =
+      typeof resolutionValue === "string"
+        ? resolutionValue
+        : "";
+
+    const quality =
+      typeof qualityValue === "string"
+        ? qualityValue
+        : "";
+
     // ==========================================
-    // 4. GET CURRENT CREDITS
+    // 4. READ OPTIONAL REFERENCE IMAGE
     // ==========================================
 
-    const { credits } = await getUserCredits(
-      user.id
-    );
+    const referenceImageValue =
+      formData.get("referenceImage");
+
+    let referenceImage:
+      | string
+      | undefined;
+
+    if (referenceImageValue instanceof File) {
+      console.log(
+        "Reference image received:",
+        referenceImageValue.name
+      );
+
+      if (referenceImageValue.size === 0) {
+        throw new Error(
+          "The reference image is empty."
+        );
+      }
+
+      if (
+        referenceImageValue.size >
+        MAX_REFERENCE_IMAGE_SIZE
+      ) {
+        throw new Error(
+          "Reference image must be 10 MB or smaller."
+        );
+      }
+
+      if (
+        !ALLOWED_IMAGE_TYPES.includes(
+          referenceImageValue.type
+        )
+      ) {
+        throw new Error(
+          "Reference image must be JPG, PNG, or WEBP."
+        );
+      }
+
+      referenceImage =
+        await fileToDataUrl(
+          referenceImageValue
+        );
+
+      console.log(
+        "Reference image converted successfully."
+      );
+    } else if (
+      typeof referenceImageValue === "string" &&
+      referenceImageValue.trim()
+    ) {
+      console.warn(
+        "Reference image was received as a string. Ignoring it because video references must be uploaded as files."
+      );
+    }
+
+    // ==========================================
+    // 5. GET CURRENT CREDITS
+    // ==========================================
+
+    const { credits } =
+      await getUserCredits(user.id);
 
     originalCredits = credits;
 
@@ -111,7 +229,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 5. CHECK CREDITS
+    // 6. CHECK CREDITS
     // ==========================================
 
     if (credits < videoGenerationCost) {
@@ -133,7 +251,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 6. GENERATE VIDEO
+    // 7. GENERATE VIDEO
     // ==========================================
 
     const provider =
@@ -145,13 +263,14 @@ export async function POST(req: NextRequest) {
 
     const result =
       await provider.generateVideo({
-        prompt: body.prompt,
-        style: body.style,
-        camera: body.camera,
-        duration: body.duration,
-        aspectRatio: body.aspectRatio,
-        resolution: body.resolution,
-        quality: body.quality,
+        prompt,
+        style,
+        camera,
+        duration,
+        aspectRatio,
+        resolution,
+        quality,
+        referenceImage,
       });
 
     console.log(
@@ -160,7 +279,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 7. CHECK GENERATION RESULT
+    // 8. CHECK GENERATION RESULT
     // ==========================================
 
     if (!result.success) {
@@ -182,7 +301,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 8. DEDUCT CREDITS
+    // 9. DEDUCT CREDITS
     // ==========================================
 
     const creditsRemaining =
@@ -200,7 +319,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 9. SAVE VIDEO TO DATABASE
+    // 10. SAVE VIDEO TO DATABASE
     // ==========================================
 
     const {
@@ -209,13 +328,13 @@ export async function POST(req: NextRequest) {
       .from("video_generations")
       .insert({
         user_id: user.id,
-        prompt: body.prompt,
-        style: body.style,
-        camera: body.camera,
-        duration: body.duration,
-        aspect_ratio: body.aspectRatio,
-        resolution: body.resolution,
-        quality: body.quality,
+        prompt,
+        style,
+        camera,
+        duration,
+        aspect_ratio: aspectRatio,
+        resolution,
+        quality,
         status: result.status,
         video_url:
           result.videoUrl ?? null,
@@ -239,7 +358,7 @@ export async function POST(req: NextRequest) {
     );
 
     // ==========================================
-    // 10. SUCCESS
+    // 11. SUCCESS
     // ==========================================
 
     console.log("========================================");
