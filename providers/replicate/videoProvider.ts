@@ -6,47 +6,97 @@ import {
   VideoProvider,
 } from "@/services/videoProvider";
 
-function mapCameraToConcept(
-  camera?: string
-): string | undefined {
-  if (!camera) {
-    return undefined;
-  }
-
-  const cameraMap: Record<string, string> = {
-    Static: "static",
-    "Pan Left": "pan_left",
-    "Pan Right": "pan_right",
-    "Zoom In": "zoom_in",
-    "Zoom Out": "zoom_out",
-    Drone: "aerial_drone",
-    "Tracking Shot": "truck_right",
-  };
-
-  return cameraMap[camera];
-}
-
 function mapDuration(
   duration?: string
 ): number {
-  if (duration === "5 sec") {
+  if (!duration) {
     return 5;
   }
 
-  if (duration === "9 sec") {
-    return 9;
+  const match = duration.match(
+    /(\d+)\s*sec/i
+  );
+
+  if (!match) {
+    throw new Error(
+      `Unsupported video duration: ${duration}.`
+    );
   }
 
-  throw new Error(
-    `Unsupported Ray 2 duration: ${duration}. Supported durations are 5 sec and 9 sec.`
-  );
+  const seconds = Number(match[1]);
+
+  if (
+    !Number.isInteger(seconds) ||
+    seconds < 4 ||
+    seconds > 30
+  ) {
+    throw new Error(
+      "Seedance 2.5 supports video durations from 4 to 30 seconds."
+    );
+  }
+
+  return seconds;
+}
+
+function mapResolution(
+  resolution?: string
+): string {
+  if (!resolution) {
+    return "720p";
+  }
+
+  const normalized =
+    resolution.trim().toLowerCase();
+
+  if (normalized === "720p") {
+    return "720p";
+  }
+
+  if (normalized === "1080p") {
+    return "1080p";
+  }
+
+  if (normalized === "2k") {
+    return "2k";
+  }
+
+  if (normalized === "4k") {
+    return "4k";
+  }
+
+  return "720p";
+}
+
+function mapAspectRatio(
+  aspectRatio?: string
+): string {
+  if (!aspectRatio) {
+    return "16:9";
+  }
+
+  const supportedRatios = [
+    "16:9",
+    "9:16",
+    "1:1",
+    "adaptive",
+  ];
+
+  if (
+    supportedRatios.includes(
+      aspectRatio
+    )
+  ) {
+    return aspectRatio;
+  }
+
+  return "16:9";
 }
 
 function buildPrompt(
   prompt: string,
   style?: string,
-  quality?: string,
-  resolution?: string
+  camera?: string,
+  quality?: string
 ): string {
   const modifiers: string[] = [];
 
@@ -56,25 +106,28 @@ function buildPrompt(
     );
   }
 
+  if (camera?.trim()) {
+    modifiers.push(
+      `Camera direction: ${camera.trim()}.`
+    );
+  }
+
   if (quality?.trim()) {
     modifiers.push(
-      `Rendering preference: ${quality.trim()}.`
+      `Quality preference: ${quality.trim()}.`
     );
   }
 
-  if (resolution?.trim()) {
-    modifiers.push(
-      `Target resolution preference: ${resolution.trim()}.`
-    );
-  }
-
-  const cleanPrompt = prompt.trim();
+  const cleanPrompt =
+    prompt.trim();
 
   if (modifiers.length === 0) {
     return cleanPrompt;
   }
 
-  return `${cleanPrompt}\n\n${modifiers.join(" ")}`;
+  return `${cleanPrompt}\n\n${modifiers.join(
+    " "
+  )}`;
 }
 
 export class ReplicateVideoProvider
@@ -103,21 +156,27 @@ export class ReplicateVideoProvider
         );
       }
 
-      const duration = mapDuration(
-        options.duration
-      );
+      const duration =
+        mapDuration(
+          options.duration
+        );
 
-      const concept =
-        mapCameraToConcept(
-          options.camera
+      const resolution =
+        mapResolution(
+          options.resolution
+        );
+
+      const aspectRatio =
+        mapAspectRatio(
+          options.aspectRatio
         );
 
       const finalPrompt =
         buildPrompt(
           options.prompt,
           options.style,
-          options.quality,
-          options.resolution
+          options.camera,
+          options.quality
         );
 
       const input: Record<
@@ -126,17 +185,17 @@ export class ReplicateVideoProvider
       > = {
         prompt: finalPrompt,
         duration,
+        resolution,
         aspect_ratio:
-          options.aspectRatio,
+          aspectRatio,
+        generate_audio: true,
+        output_format: "mp4",
+        watermark: false,
       };
-
-      if (concept) {
-        input.concepts = [concept];
-      }
 
       console.log(
         "Replicate model:",
-        "luma/ray-2-720p"
+        "bytedance/seedance-2.5"
       );
 
       console.log(
@@ -145,13 +204,23 @@ export class ReplicateVideoProvider
       );
 
       console.log(
-        "Aspect ratio:",
-        options.aspectRatio
+        "Video resolution:",
+        resolution
       );
 
       console.log(
-        "Camera concept:",
-        concept || "none"
+        "Aspect ratio:",
+        aspectRatio
+      );
+
+      console.log(
+        "Audio generation:",
+        true
+      );
+
+      console.log(
+        "Output format:",
+        "mp4"
       );
 
       console.log(
@@ -164,7 +233,7 @@ export class ReplicateVideoProvider
 
       const output =
         await replicate.run(
-          "luma/ray-2-720p",
+          "bytedance/seedance-2.5",
           {
             input,
           }
