@@ -87,20 +87,49 @@ export default function RegisterPage() {
           },
         });
 
+      /*
+       * IMPORTANT:
+       * Log the complete Supabase error so we can
+       * identify the real reason registration fails.
+       */
       if (error) {
-        alert(error.message);
+        console.error(
+          "SUPABASE SIGNUP ERROR:",
+          error
+        );
+
+        console.error(
+          "SUPABASE SIGNUP ERROR JSON:",
+          JSON.stringify(error, null, 2)
+        );
+
+        alert(
+          error.message ||
+            error.code ||
+            "Unable to create your account. Please try again."
+        );
+
         return;
       }
 
       if (!data.user) {
+        console.error(
+          "Supabase signup returned no user:",
+          data
+        );
+
         alert(
           "Unable to create your account. Please try again."
         );
+
         return;
       }
 
-      // Meta conversion tracking:
-      // Fire only after Supabase successfully creates the user.
+      /*
+       * Meta conversion tracking:
+       * Fire only after Supabase successfully creates
+       * the user.
+       */
       if (
         typeof window !== "undefined" &&
         window.fbq
@@ -113,7 +142,7 @@ export default function RegisterPage() {
 
       /*
        * If Supabase returns a session immediately,
-       * we can process the referral now.
+       * process the referral now.
        *
        * If email confirmation is enabled and there is
        * no session, the referral code remains safely
@@ -150,6 +179,10 @@ export default function RegisterPage() {
         }
       }
 
+      /*
+       * Email confirmation is expected when enabled
+       * in Supabase Authentication settings.
+       */
       alert(
         "🎉 Account created successfully!\n\nPlease check your email and verify your account before signing in."
       );
@@ -162,6 +195,11 @@ export default function RegisterPage() {
       console.error(
         "Registration error:",
         error
+      );
+
+      console.error(
+        "Registration error JSON:",
+        JSON.stringify(error, null, 2)
       );
 
       alert(
@@ -263,6 +301,7 @@ export default function RegisterPage() {
             Sign In
           </Link>
         </div>
+
       </div>
     </main>
   );
