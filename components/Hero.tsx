@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 
 export default function Hero() {
@@ -12,14 +11,17 @@ export default function Hero() {
       {/* Hero Content */}
       <div className="relative z-10">
 
+        {/* Main SEO Heading */}
         <h1 className="text-6xl md:text-8xl font-black tracking-tight text-white">
-          SONET AI STUDIO
+          SONET AI STUDIO — AI Creative Platform
         </h1>
 
+        {/* Tagline */}
         <p className="mt-6 text-3xl font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
           Making Life Lite
         </p>
 
+        {/* Main Description */}
         <p className="mt-8 max-w-4xl mx-auto text-xl text-gray-300 leading-relaxed">
           Welcome to the future of AI creativity and business.
           Create stunning AI images, cinematic AI videos,
