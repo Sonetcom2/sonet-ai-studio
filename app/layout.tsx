@@ -4,16 +4,44 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.sonetaistudio.com"),
+
   title: "SONET AI STUDIO | AI Creative Platform",
+
   description:
     "SONET AI STUDIO is an all-in-one AI creative platform for generating images, videos, prompts, voice content and marketing content faster.",
+
   openGraph: {
     title: "SONET AI STUDIO | AI Creative Platform",
+
     description:
       "Create images, videos, prompts, voice content and marketing content with SONET AI STUDIO.",
-    url: "https://sonetaistudio.com",
+
+    url: "https://www.sonetaistudio.com",
+
     siteName: "SONET AI STUDIO",
+
     type: "website",
+
+    images: [
+      {
+        url: "/images/sonet-ai-studio-og.png",
+        width: 1536,
+        height: 1024,
+        alt: "SONET AI STUDIO — AI Creative Platform",
+      },
+    ],
+  },
+
+  twitter: {
+    card: "summary_large_image",
+
+    title: "SONET AI STUDIO | AI Creative Platform",
+
+    description:
+      "Create images, videos, prompts, voice content and marketing content with SONET AI STUDIO.",
+
+    images: ["/images/sonet-ai-studio-og.png"],
   },
 };
 
