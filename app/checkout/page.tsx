@@ -1,7 +1,21 @@
-
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getSettings } from "@/services/settingsService";
 import CheckoutClient from "@/components/checkout/CheckoutClient";
+
+export const metadata: Metadata = {
+  title: "Checkout | SONET AI STUDIO",
+  description:
+    "Complete your SONET AI STUDIO subscription purchase securely and choose the plan that fits your creative needs.",
+  openGraph: {
+    title: "Checkout | SONET AI STUDIO",
+    description:
+      "Complete your SONET AI STUDIO subscription purchase and start creating with AI.",
+    url: "https://www.sonetaistudio.com/checkout",
+    siteName: "SONET AI STUDIO",
+    type: "website",
+  },
+};
 
 export default async function CheckoutPage() {
   const settings = await getSettings();
