@@ -1,3 +1,19 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "About SONET AI STUDIO | AI Creative Platform",
+  description:
+    "Learn about SONET AI STUDIO, an AI-powered creative platform designed to help creators, businesses and individuals create professional digital content faster.",
+  openGraph: {
+    title: "About SONET AI STUDIO | AI Creative Platform",
+    description:
+      "Discover SONET AI STUDIO and its AI-powered creative tools for images, videos, prompts and digital content.",
+    url: "https://www.sonetaistudio.com/about",
+    siteName: "SONET AI STUDIO",
+    type: "website",
+  },
+};
+
 export default function AboutPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-16 text-white">
@@ -19,9 +35,11 @@ export default function AboutPage() {
 
           <div className="rounded-3xl border border-slate-700 bg-slate-900 p-8">
             <div className="text-4xl">🎨</div>
+
             <h2 className="mt-5 text-2xl font-bold">
               Creative Tools
             </h2>
+
             <p className="mt-3 text-slate-400">
               AI-powered tools for creating professional digital content.
             </p>
@@ -29,9 +47,11 @@ export default function AboutPage() {
 
           <div className="rounded-3xl border border-slate-700 bg-slate-900 p-8">
             <div className="text-4xl">🤖</div>
+
             <h2 className="mt-5 text-2xl font-bold">
               AI Technology
             </h2>
+
             <p className="mt-3 text-slate-400">
               Turn your ideas and prompts into high-quality creative
               results.
@@ -40,9 +60,11 @@ export default function AboutPage() {
 
           <div className="rounded-3xl border border-slate-700 bg-slate-900 p-8">
             <div className="text-4xl">🚀</div>
+
             <h2 className="mt-5 text-2xl font-bold">
               Built for Creators
             </h2>
+
             <p className="mt-3 text-slate-400">
               A growing creative workspace for individuals and businesses.
             </p>

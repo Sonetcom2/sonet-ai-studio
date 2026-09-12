@@ -1,6 +1,20 @@
-
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getSettings } from "@/services/settingsService";
+
+export const metadata: Metadata = {
+  title: "Pricing Plans | SONET AI STUDIO",
+  description:
+    "Explore SONET AI STUDIO pricing plans and choose the right AI creative tools, credits and features for your content and business needs.",
+  openGraph: {
+    title: "Pricing Plans | SONET AI STUDIO",
+    description:
+      "Choose the right SONET AI STUDIO plan for AI images, videos, prompts, marketing content and more.",
+    url: "https://www.sonetaistudio.com/pricing",
+    siteName: "SONET AI STUDIO",
+    type: "website",
+  },
+};
 
 export default async function PricingPage() {
   const settings = await getSettings();
