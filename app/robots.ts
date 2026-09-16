@@ -6,6 +6,6 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
     },
-    sitemap: "https://sonetaistudio.com/sitemap.xml",
+    sitemap: "https://www.sonetaistudio.com/sitemap.xml",
   };
 }
