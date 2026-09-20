@@ -1,362 +1,309 @@
-import replicate from "@/services/replicate";
+import Replicate from "replicate";
 
-import {
-  VideoGenerationOptions,
-  VideoGenerationResult,
-  VideoProvider,
-} from "@/services/videoProvider";
+export interface VideoGenerationOptions {
+  prompt: string;
+  style?: string;
+  camera?: string;
+  duration?: string;
+  aspectRatio?: string;
+  resolution?: string;
+  quality?: string;
+  referenceImage?: string;
+}
 
-function mapDuration(
-  duration?: string
-): number {
-  if (!duration) {
-    return 5;
+export interface VideoGenerationResult {
+  success: boolean;
+  provider?: string;
+  status?: string;
+  jobId?: string;
+  videoUrl?: string;
+  message?: string;
+  error?: string;
+}
+
+export class ReplicateVideoProvider {
+  private replicate: Replicate;
+
+  constructor() {
+    if (!process.env.REPLICATE_API_TOKEN) {
+      throw new Error("REPLICATE_API_TOKEN is not configured");
+    }
+
+    this.replicate = new Replicate({
+      auth: process.env.REPLICATE_API_TOKEN,
+    });
   }
 
-  const match = duration.match(
-    /(\d+)\s*sec/i
-  );
+  /**
+   * Seedance 2.0 Mini:
+   * - Duration: 5–15 seconds
+   * - Resolution: 480p / 720p
+   */
+  private mapDuration(duration?: string): number {
+    if (!duration) {
+      return 5;
+    }
 
-  if (!match) {
+    const match = duration.match(/(\d+)\s*sec/i);
+
+    if (!match) {
+      return 5;
+    }
+
+    const seconds = Number(match[1]);
+
+    if (!Number.isFinite(seconds)) {
+      return 5;
+    }
+
+    if (seconds < 5 || seconds > 15) {
+      throw new Error(
+        "Seedance 2.0 Mini supports video durations from 5 to 15 seconds."
+      );
+    }
+
+    return seconds;
+  }
+
+  /**
+   * Seedance 2.0 Mini supports only 480p and 720p.
+   */
+  private mapResolution(resolution?: string): string {
+    if (!resolution) {
+      return "720p";
+    }
+
+    const value = resolution.toLowerCase().trim();
+
+    if (value === "480p") {
+      return "480p";
+    }
+
+    if (value === "720p") {
+      return "720p";
+    }
+
     throw new Error(
-      `Unsupported video duration: ${duration}.`
+      "Seedance 2.0 Mini supports only 480p and 720p resolution."
     );
   }
 
-  const seconds = Number(match[1]);
+  /**
+   * Supported Seedance 2.0 Mini aspect ratios.
+   */
+  private mapAspectRatio(aspectRatio?: string): string {
+    if (!aspectRatio) {
+      return "16:9";
+    }
 
-  if (
-    !Number.isInteger(seconds) ||
-    seconds < 4 ||
-    seconds > 30
-  ) {
-    throw new Error(
-      "Seedance 2.5 supports video durations from 4 to 30 seconds."
-    );
-  }
+    const value = aspectRatio.toLowerCase().trim();
 
-  return seconds;
-}
+    const supportedRatios = [
+      "16:9",
+      "4:3",
+      "1:1",
+      "3:4",
+      "9:16",
+      "21:9",
+      "adaptive",
+    ];
 
-function mapResolution(
-  resolution?: string
-): string {
-  if (!resolution) {
-    return "720p";
-  }
+    if (supportedRatios.includes(value)) {
+      return value;
+    }
 
-  const normalized =
-    resolution.trim().toLowerCase();
-
-  if (normalized === "720p") {
-    return "720p";
-  }
-
-  if (normalized === "1080p") {
-    return "1080p";
-  }
-
-  if (normalized === "2k") {
-    return "2k";
-  }
-
-  if (normalized === "4k") {
-    return "4k";
-  }
-
-  return "720p";
-}
-
-function mapAspectRatio(
-  aspectRatio?: string
-): string {
-  if (!aspectRatio) {
     return "16:9";
   }
 
-  const supportedRatios = [
-    "16:9",
-    "9:16",
-    "1:1",
-    "adaptive",
-  ];
+  /**
+   * Build the final video prompt.
+   */
+  private buildPrompt(
+    prompt: string,
+    style?: string,
+    camera?: string,
+    quality?: string,
+    hasReferenceImage?: boolean
+  ): string {
+    const parts: string[] = [];
 
-  if (
-    supportedRatios.includes(
-      aspectRatio
-    )
-  ) {
-    return aspectRatio;
+    if (prompt?.trim()) {
+      parts.push(prompt.trim());
+    }
+
+    if (style?.trim()) {
+      parts.push(`Visual style: ${style.trim()}`);
+    }
+
+    if (camera?.trim()) {
+      parts.push(`Camera: ${camera.trim()}`);
+    }
+
+    if (quality?.trim()) {
+      parts.push(`Quality: ${quality.trim()}`);
+    }
+
+    if (hasReferenceImage) {
+      parts.push(
+        "Use [Image1] as the visual reference. Preserve the subject's identity, appearance, facial features, clothing and overall visual characteristics unless the prompt explicitly requests a change."
+      );
+    }
+
+    return parts.join("\n\n");
   }
 
-  return "16:9";
-}
-
-function buildPrompt(
-  prompt: string,
-  style?: string,
-  camera?: string,
-  quality?: string
-): string {
-  const modifiers: string[] = [];
-
-  if (style?.trim()) {
-    modifiers.push(
-      `Visual style: ${style.trim()}.`
-    );
-  }
-
-  if (camera?.trim()) {
-    modifiers.push(
-      `Camera direction: ${camera.trim()}.`
-    );
-  }
-
-  if (quality?.trim()) {
-    modifiers.push(
-      `Quality preference: ${quality.trim()}.`
-    );
-  }
-
-  const cleanPrompt =
-    prompt.trim();
-
-  if (modifiers.length === 0) {
-    return cleanPrompt;
-  }
-
-  return `${cleanPrompt}\n\n${modifiers.join(
-    " "
-  )}`;
-}
-
-export class ReplicateVideoProvider
-  implements VideoProvider
-{
+  /**
+   * Generate a video with Seedance 2.0 Mini.
+   */
   async generateVideo(
     options: VideoGenerationOptions
   ): Promise<VideoGenerationResult> {
     try {
-      console.log(
-        "========================================"
-      );
-      console.log(
-        "REPLICATE VIDEO PROVIDER"
-      );
-      console.log(
-        "========================================"
+      const duration = this.mapDuration(options.duration);
+      const resolution = this.mapResolution(options.resolution);
+      const aspectRatio = this.mapAspectRatio(options.aspectRatio);
+
+      const hasReferenceImage =
+        typeof options.referenceImage === "string" &&
+        options.referenceImage.trim().length > 0;
+
+      const finalPrompt = this.buildPrompt(
+        options.prompt,
+        options.style,
+        options.camera,
+        options.quality,
+        hasReferenceImage
       );
 
-      if (
-        !options.prompt ||
-        !options.prompt.trim()
-      ) {
-        throw new Error(
-          "Video prompt is required."
-        );
+      if (!finalPrompt.trim()) {
+        throw new Error("Video prompt is required.");
       }
 
-      const duration =
-        mapDuration(
-          options.duration
-        );
-
-      const resolution =
-        mapResolution(
-          options.resolution
-        );
-
-      const aspectRatio =
-        mapAspectRatio(
-          options.aspectRatio
-        );
-
-      const finalPrompt =
-        buildPrompt(
-          options.prompt,
-          options.style,
-          options.camera,
-          options.quality
-        );
-
-      const input: Record<
-        string,
-        unknown
-      > = {
+      /**
+       * Seedance 2.0 Mini input.
+       */
+      const input: Record<string, unknown> = {
         prompt: finalPrompt,
         duration,
         resolution,
-        aspect_ratio:
-          aspectRatio,
+        aspect_ratio: aspectRatio,
         generate_audio: true,
-        output_format: "mp4",
-        watermark: false,
       };
 
-      // ==========================================
-      // OPTIONAL REFERENCE IMAGE
-      // ==========================================
-
-      if (
-        options.referenceImage &&
-        options.referenceImage.trim()
-      ) {
-        input.image =
-          options.referenceImage;
-
-        console.log(
-          "Reference image:",
-          "provided"
-        );
-      } else {
-        console.log(
-          "Reference image:",
-          "not provided"
-        );
+      /**
+       * Reference image.
+       */
+      if (hasReferenceImage) {
+        input.reference_images = [options.referenceImage];
       }
 
       console.log(
-        "Replicate model:",
-        "bytedance/seedance-2.5"
+        "[SONET VIDEO] Starting Seedance 2.0 Mini generation"
       );
 
-      console.log(
-        "Video duration:",
-        duration
-      );
+      console.log("[SONET VIDEO] Input:", {
+        model: "bytedance/seedance-2.0-mini",
+        duration,
+        resolution,
+        aspectRatio,
+        hasReferenceImage,
+        generateAudio: true,
+      });
 
-      console.log(
-        "Video resolution:",
-        resolution
-      );
-
-      console.log(
-        "Aspect ratio:",
-        aspectRatio
-      );
-
-      console.log(
-        "Audio generation:",
-        true
-      );
-
-      console.log(
-        "Output format:",
-        "mp4"
-      );
-
-      console.log(
-        "Replicate input:",
+      const output = await this.replicate.run(
+        "bytedance/seedance-2.0-mini",
         {
-          ...input,
-          prompt: "[REDACTED]",
-          image: options.referenceImage
-            ? "[REFERENCE IMAGE]"
-            : undefined,
+          input,
         }
       );
 
-      const output =
-        await replicate.run(
-          "bytedance/seedance-2.5",
-          {
-            input,
-          }
-        );
+      console.log("[SONET VIDEO] Replicate output received");
 
-      console.log(
-        "Replicate generation completed."
-      );
+      let videoUrl: string | undefined;
 
-      let videoUrl:
-        | string
-        | undefined;
-
-      if (
-        output &&
-        typeof output ===
-          "object" &&
-        "url" in output &&
-        typeof (
-          output as {
-            url?: unknown;
-          }
-        ).url === "function"
-      ) {
-        videoUrl = (
-          output as {
-            url: () => string;
-          }
-        ).url();
-      }
-
-      if (
-        !videoUrl &&
-        typeof output ===
-          "string"
-      ) {
+      /**
+       * Handle Replicate output formats.
+       */
+      if (typeof output === "string") {
         videoUrl = output;
+      } else if (
+        output &&
+        typeof output === "object" &&
+        "url" in output &&
+        typeof (output as { url?: unknown }).url === "function"
+      ) {
+        videoUrl = String(
+          (output as { url: () => unknown }).url()
+        );
+      } else if (
+        output &&
+        typeof output === "object" &&
+        "url" in output &&
+        typeof (output as { url?: unknown }).url === "string"
+      ) {
+        videoUrl = String(
+          (output as { url: string }).url
+        );
       }
 
       if (!videoUrl) {
         console.error(
-          "Replicate output did not contain a usable video URL:",
+          "[SONET VIDEO] Could not extract video URL:",
           output
         );
 
         throw new Error(
-          "Replicate completed successfully but no video URL was returned."
+          "Video generation completed but no video URL was returned."
         );
       }
 
+      /**
+       * Replicate output does not expose a separate job ID here,
+       * so use the generated video URL as the available identifier.
+       */
+      const jobId = videoUrl;
+
       console.log(
-        "Video URL received successfully."
+        "[SONET VIDEO] Video generated successfully"
       );
 
       return {
         success: true,
-        provider: "Replicate",
-        status: "completed",
-        jobId: crypto.randomUUID(),
+        provider: "replicate",
+        status: "succeeded",
+        jobId,
         videoUrl,
-        message:
-          "Video generated successfully.",
+        message: "Video generated successfully.",
       };
     } catch (error) {
       console.error(
-        "Replicate video generation error:",
+        "[SONET VIDEO] Generation failed:",
         error
       );
 
-      const message =
+      const errorMessage =
         error instanceof Error
           ? error.message
-          : "Replicate video generation failed.";
+          : "Video generation failed.";
 
       return {
         success: false,
-        provider: "Replicate",
+        provider: "replicate",
         status: "failed",
-        message,
+        jobId: undefined,
+        message: errorMessage,
+        error: errorMessage,
       };
     }
   }
 
-  async getGenerationStatus(
-    jobId: string
-  ): Promise<VideoGenerationResult> {
-    console.log(
-      "Checking video generation job:",
-      jobId
-    );
-
+  /**
+   * Placeholder for future asynchronous generation support.
+   */
+  async getGenerationStatus(predictionId: string) {
     return {
-      success: true,
-      provider: "Replicate",
+      id: predictionId,
       status: "processing",
-      jobId,
-      message:
-        "Video generation is still processing.",
     };
   }
 }

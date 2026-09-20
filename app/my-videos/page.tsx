@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 type Video = {
   id: string;
   prompt: string;
-  style: string;
-  duration: string;
-  resolution: string;
-  status: string;
+  style?: string | null;
+  duration?: string | null;
+  resolution?: string | null;
+  status?: string | null;
   created_at: string;
   video_url?: string | null;
 };
@@ -30,26 +30,21 @@ export default function MyVideosPage() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-        "/api/my-videos"
-      );
+      const response = await fetch("/api/my-videos", {
+        cache: "no-store",
+      });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data.error ||
-            "Unable to load your videos."
+          data.error || "Unable to load your videos."
         );
       }
 
       setVideos(data.videos || []);
     } catch (error) {
-      console.error(
-        "My Videos Load Error:",
-        error
-      );
-
+      console.error("My Videos Load Error:", error);
       setVideos([]);
     } finally {
       setLoading(false);
@@ -72,33 +67,49 @@ export default function MyVideosPage() {
       const response = await fetch(
         `/api/download-video?url=${encodeURIComponent(
           video.video_url
-        )}`
+        )}`,
+        {
+          cache: "no-store",
+        }
       );
 
       if (!response.ok) {
-        throw new Error("Download failed.");
+        let message = "Download failed.";
+
+        try {
+          const data = await response.json();
+
+          if (data?.error) {
+            message = data.error;
+          }
+        } catch {
+          // Ignore JSON parsing failure.
+        }
+
+        throw new Error(message);
       }
 
       const blob = await response.blob();
 
+      if (!blob.size) {
+        throw new Error("The downloaded video is empty.");
+      }
+
       const downloadUrl =
         window.URL.createObjectURL(blob);
 
-      const link =
-        document.createElement("a");
+      const link = document.createElement("a");
 
       link.href = downloadUrl;
-
-      link.download =
-        `sonet-ai-video-${video.id}.mp4`;
+      link.download = `sonet-ai-video-${video.id}.mp4`;
 
       document.body.appendChild(link);
-
       link.click();
-
       document.body.removeChild(link);
 
-      window.URL.revokeObjectURL(downloadUrl);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(downloadUrl);
+      }, 1000);
     } catch (error) {
       console.error(
         "Video download error:",
@@ -142,8 +153,7 @@ export default function MyVideosPage() {
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data.error ||
-            "Unable to delete video."
+          data.error || "Unable to delete video."
         );
       }
 
@@ -152,6 +162,10 @@ export default function MyVideosPage() {
           (item) => item.id !== video.id
         )
       );
+
+      if (previewVideo?.id === video.id) {
+        setPreviewVideo(null);
+      }
     } catch (error) {
       console.error(
         "Video delete error:",
@@ -170,13 +184,11 @@ export default function MyVideosPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-black px-8 py-10 text-white">
-
       <div className="mx-auto max-w-7xl">
 
         {/* HEADER */}
 
         <div className="mb-12">
-
           <h1 className="text-5xl font-black">
             🎥 My Videos
           </h1>
@@ -185,33 +197,25 @@ export default function MyVideosPage() {
             All your AI-generated videos stored in
             SONET AI Studio.
           </p>
-
         </div>
 
         {/* LOADING */}
 
         {loading ? (
-
           <div className="flex h-[500px] items-center justify-center">
-
             <div className="text-center">
-
               <div className="mx-auto h-20 w-20 animate-spin rounded-full border-4 border-cyan-500 border-t-transparent" />
 
               <p className="mt-8 text-2xl font-bold">
                 Loading Videos...
               </p>
-
             </div>
-
           </div>
-
         ) : videos.length === 0 ? (
 
           /* EMPTY STATE */
 
           <div className="rounded-3xl border border-slate-700 bg-slate-900 p-16 text-center">
-
             <div className="text-7xl">
               🎥
             </div>
@@ -231,7 +235,6 @@ export default function MyVideosPage() {
             >
               🎬 Create AI Video
             </a>
-
           </div>
 
         ) : (
@@ -240,218 +243,193 @@ export default function MyVideosPage() {
 
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 
-            {videos.map((video) => (
+            {videos.map((video) => {
 
-              <div
-                key={video.id}
-                className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-xl transition hover:-translate-y-1 hover:shadow-cyan-500/20"
-              >
+              const hasVideo =
+                typeof video.video_url === "string" &&
+                video.video_url.trim().length > 0;
 
-                {/* VIDEO */}
+              return (
+                <div
+                  key={video.id}
+                  className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-xl transition hover:-translate-y-1 hover:shadow-cyan-500/20"
+                >
 
-                <div className="relative aspect-video overflow-hidden bg-black">
+                  {/* VIDEO */}
 
-                  {video.video_url &&
-                  video.status === "completed" ? (
+                  <div className="relative aspect-video overflow-hidden bg-black">
 
-                    <video
-                      src={video.video_url}
-                      className="h-full w-full object-cover"
-                      muted
-                      playsInline
-                      preload="metadata"
-                    />
-
-                  ) : (
-
-                    <div className="flex h-full items-center justify-center bg-gradient-to-br from-cyan-600 via-blue-700 to-slate-900">
-
-                      <div className="text-7xl opacity-30">
-                        🎬
+                    {hasVideo ? (
+                      <video
+                        src={video.video_url!}
+                        className="h-full w-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                        controls
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center bg-gradient-to-br from-cyan-600 via-blue-700 to-slate-900">
+                        <div className="text-7xl opacity-30">
+                          🎬
+                        </div>
                       </div>
+                    )}
+
+                    {video.duration && (
+                      <div className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-sm font-bold">
+                        {video.duration}
+                      </div>
+                    )}
+
+                    {video.resolution && (
+                      <div className="absolute bottom-4 right-4 rounded-full bg-cyan-500 px-3 py-1 text-sm font-bold text-black">
+                        {video.resolution}
+                      </div>
+                    )}
+
+                  </div>
+
+                  {/* CONTENT */}
+
+                  <div className="space-y-5 p-5">
+
+                    <h3 className="line-clamp-3 text-lg font-bold">
+                      {video.prompt}
+                    </h3>
+
+                    <div className="flex items-center justify-between gap-2">
+
+                      {video.style && (
+                        <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-300">
+                          🎨 {video.style}
+                        </span>
+                      )}
+
+                      <span className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-bold text-green-300">
+                        🟢 Stored
+                      </span>
 
                     </div>
 
-                  )}
+                    <p className="text-xs text-slate-500">
+                      {new Date(
+                        video.created_at
+                      ).toLocaleString()}
+                    </p>
 
-                  <div className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-sm font-bold">
-                    {video.duration}
-                  </div>
+                    {/* ACTIONS */}
 
-                  <div className="absolute bottom-4 right-4 rounded-full bg-cyan-500 px-3 py-1 text-sm font-bold text-black">
-                    {video.resolution}
-                  </div>
+                    <div className="grid grid-cols-3 gap-2">
 
-                </div>
+                      <button
+                        type="button"
+                        disabled={!hasVideo}
+                        onClick={() =>
+                          setPreviewVideo(video)
+                        }
+                        className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        ▶
+                      </button>
 
-                {/* CONTENT */}
+                      <button
+                        type="button"
+                        disabled={
+                          !hasVideo ||
+                          downloadingId === video.id
+                        }
+                        onClick={() =>
+                          handleDownload(video)
+                        }
+                        className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-green-500 hover:bg-green-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {downloadingId === video.id
+                          ? "⏳"
+                          : "⬇"}
+                      </button>
 
-                <div className="space-y-5 p-5">
+                      <button
+                        type="button"
+                        disabled={
+                          deletingId === video.id
+                        }
+                        onClick={() =>
+                          handleDelete(video)
+                        }
+                        className="rounded-xl border border-red-600 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {deletingId === video.id
+                          ? "⏳"
+                          : "🗑"}
+                      </button>
 
-                  <h3 className="line-clamp-3 text-lg font-bold">
-                    {video.prompt}
-                  </h3>
-
-                  <div className="flex items-center justify-between gap-2">
-
-                    <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-300">
-                      🎨 {video.style}
-                    </span>
-
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${
-                        video.status ===
-                        "completed"
-                          ? "bg-green-500/20 text-green-300"
-                          : video.status ===
-                            "processing"
-                          ? "bg-yellow-500/20 text-yellow-300"
-                          : "bg-red-500/20 text-red-300"
-                      }`}
-                    >
-                      {video.status ===
-                      "completed"
-                        ? "🟢 Completed"
-                        : video.status ===
-                          "processing"
-                        ? "🟡 Processing"
-                        : "🔴 Failed"}
-                    </span>
-
-                  </div>
-
-                  <p className="text-xs text-slate-500">
-                    {new Date(
-                      video.created_at
-                    ).toLocaleString()}
-                  </p>
-
-                  {/* ACTIONS */}
-
-                  <div className="grid grid-cols-3 gap-2">
-
-                    <button
-                      type="button"
-                      disabled={
-                        !video.video_url ||
-                        video.status !==
-                          "completed"
-                      }
-                      onClick={() =>
-                        setPreviewVideo(video)
-                      }
-                      className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      ▶
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={
-                        !video.video_url ||
-                        video.status !==
-                          "completed" ||
-                        downloadingId ===
-                          video.id
-                      }
-                      onClick={() =>
-                        handleDownload(video)
-                      }
-                      className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-green-500 hover:bg-green-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {downloadingId ===
-                      video.id
-                        ? "⏳"
-                        : "⬇"}
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={
-                        deletingId === video.id
-                      }
-                      onClick={() =>
-                        handleDelete(video)
-                      }
-                      className="rounded-xl border border-red-600 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {deletingId ===
-                      video.id
-                        ? "⏳"
-                        : "🗑"}
-                    </button>
+                    </div>
 
                   </div>
 
                 </div>
-
-              </div>
-
-            ))}
+              );
+            })}
 
           </div>
-
         )}
 
       </div>
 
       {/* PREVIEW MODAL */}
 
-      {previewVideo &&
-        previewVideo.video_url && (
+      {previewVideo?.video_url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+          onClick={() =>
+            setPreviewVideo(null)
+          }
+        >
 
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
-            onClick={() =>
-              setPreviewVideo(null)
+            className="relative w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+            onClick={(event) =>
+              event.stopPropagation()
             }
           >
 
-            <div
-              className="relative w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
-              onClick={(event) =>
-                event.stopPropagation()
+            <button
+              type="button"
+              onClick={() =>
+                setPreviewVideo(null)
               }
+              className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-4 py-2 text-xl hover:bg-red-600"
             >
+              ✕
+            </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setPreviewVideo(null)
-                }
-                className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-4 py-2 text-xl hover:bg-red-600"
-              >
-                ✕
-              </button>
+            <video
+              src={previewVideo.video_url}
+              controls
+              autoPlay
+              playsInline
+              className="max-h-[80vh] w-full bg-black"
+            />
 
-              <video
-                src={previewVideo.video_url}
-                controls
-                autoPlay
-                playsInline
-                className="max-h-[80vh] w-full bg-black"
-              />
+            <div className="p-5">
+              <h3 className="text-xl font-bold">
+                {previewVideo.prompt}
+              </h3>
 
-              <div className="p-5">
-
-                <h3 className="text-xl font-bold">
-                  {previewVideo.prompt}
-                </h3>
-
-                <p className="mt-2 text-sm text-slate-400">
-                  {previewVideo.style} ·{" "}
-                  {previewVideo.duration} ·{" "}
-                  {previewVideo.resolution}
-                </p>
-
-              </div>
-
+              <p className="mt-2 text-sm text-slate-400">
+                {previewVideo.style || "AI Video"}{" "}
+                ·{" "}
+                {previewVideo.duration || "Generated"}{" "}
+                ·{" "}
+                {previewVideo.resolution || "HD"}
+              </p>
             </div>
 
           </div>
 
-        )}
-
+        </div>
+      )}
     </main>
   );
 }

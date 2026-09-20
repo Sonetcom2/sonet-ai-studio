@@ -7,7 +7,6 @@ export async function GET() {
   try {
     const supabase = await createClient();
 
-    // Get the currently logged-in user
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -24,12 +23,11 @@ export async function GET() {
       );
     }
 
-    // Get only this user's videos
     const { data: videos, error } =
       await supabaseAdmin
         .from("video_generations")
         .select(
-          "id, prompt, style, duration, resolution, status, created_at, video_url"
+          "id, prompt, video_url, credits_used, created_at"
         )
         .eq("user_id", user.id)
         .order("created_at", {
@@ -53,9 +51,27 @@ export async function GET() {
       );
     }
 
+    const formattedVideos = (videos || []).map(
+      (video) => ({
+        ...video,
+
+        // A permanent video_url means the video was
+        // successfully generated and stored.
+        status: video.video_url
+          ? "completed"
+          : "failed",
+
+        style: "Seedance 2.0 Mini",
+
+        duration: "AI Video",
+
+        resolution: "720p",
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      videos: videos || [],
+      videos: formattedVideos,
     });
   } catch (error) {
     console.error(

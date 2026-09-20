@@ -1,75 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
-
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
-
 import { ReplicateVideoProvider } from "@/providers/replicate/videoProvider";
-
-import {
-  getUserCredits,
-  deductCredits,
-} from "@/services/creditService";
-
 import { getSettings } from "@/services/settingsService";
+import { getUserCredits, deductCredits } from "@/services/creditService";
 
-export const runtime = "nodejs";
-export const maxDuration = 300;
-
-const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024;
-
-const ALLOWED_IMAGE_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-];
-
-async function fileToDataUrl(file: File): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  return `data:${file.type};base64,${buffer.toString("base64")}`;
-}
-
-export async function POST(req: NextRequest) {
-  let userId: string | null = null;
-  let originalCredits: number | null = null;
+export async function POST(req: Request) {
+  let uploadedStoragePath: string | null = null;
+  let creditsDeducted = false;
+  let videoGenerationCost = 0;
 
   try {
-    console.log("========================================");
-    console.log("GENERATE VIDEO API START");
-    console.log("========================================");
-
+    // ---------------------------------------------------------
+    // 1. CREATE SUPABASE SERVER CLIENT
+    // ---------------------------------------------------------
     const supabase = await createClient();
 
-    // ==========================================
-    // 1. GET LOGGED-IN USER
-    // ==========================================
-
+    // ---------------------------------------------------------
+    // 2. AUTHENTICATE USER
+    // ---------------------------------------------------------
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (authError || !user) {
       return NextResponse.json(
         {
           success: false,
-          message: "Please login first.",
+          error: "You must be logged in to generate a video.",
         },
-        {
-          status: 401,
-        }
+        { status: 401 }
       );
     }
 
-    userId = user.id;
-
-    // ==========================================
-    // 2. GET ADMIN SETTINGS
-    // ==========================================
-
+    // ---------------------------------------------------------
+    // 3. GET VIDEO GENERATION COST
+    // ---------------------------------------------------------
     const settings = await getSettings();
 
-    const videoGenerationCost = Number(
+    videoGenerationCost = Number(
       settings.video_generation_cost
     );
 
@@ -77,188 +46,119 @@ export async function POST(req: NextRequest) {
       !Number.isFinite(videoGenerationCost) ||
       videoGenerationCost <= 0
     ) {
-      throw new Error(
-        "Invalid video generation cost configured."
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Video generation cost is not configured correctly.",
+        },
+        { status: 500 }
       );
     }
 
-    console.log(
-      "Video generation cost:",
-      videoGenerationCost
+    // ---------------------------------------------------------
+    // 4. CHECK USER CREDITS
+    // ---------------------------------------------------------
+    const creditInfo = await getUserCredits(user.id);
+
+    const originalCredits = Number(
+      creditInfo.credits
     );
 
-    // ==========================================
-    // 3. READ MULTIPART FORM DATA
-    // ==========================================
+    if (!Number.isFinite(originalCredits)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unable to determine your current credit balance.",
+        },
+        { status: 500 }
+      );
+    }
 
+    if (originalCredits < videoGenerationCost) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Insufficient credits. You need ${videoGenerationCost} credits to generate a video.`,
+          required: videoGenerationCost,
+          available: originalCredits,
+        },
+        { status: 402 }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 5. READ FORM DATA
+    // ---------------------------------------------------------
     const formData = await req.formData();
 
-    const promptValue = formData.get("prompt");
-    const styleValue = formData.get("style");
-    const cameraValue = formData.get("camera");
-    const durationValue = formData.get("duration");
-    const aspectRatioValue =
-      formData.get("aspectRatio");
-    const resolutionValue =
-      formData.get("resolution");
-    const qualityValue = formData.get("quality");
+    const prompt = String(
+      formData.get("prompt") || ""
+    );
 
-    const prompt =
-      typeof promptValue === "string"
-        ? promptValue.trim()
-        : "";
+    const style = String(
+      formData.get("style") || ""
+    );
 
-    if (!prompt) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Prompt is required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
+    const camera = String(
+      formData.get("camera") || ""
+    );
 
-    const style =
-      typeof styleValue === "string"
-        ? styleValue
-        : "";
+    const duration = String(
+      formData.get("duration") || "5 sec"
+    );
 
-    const camera =
-      typeof cameraValue === "string"
-        ? cameraValue
-        : "";
+    const aspectRatio = String(
+      formData.get("aspectRatio") || "16:9"
+    );
 
-    const duration =
-      typeof durationValue === "string"
-        ? durationValue
-        : "";
+    const resolution = String(
+      formData.get("resolution") || "720p"
+    );
 
-    const aspectRatio =
-      typeof aspectRatioValue === "string"
-        ? aspectRatioValue
-        : "";
+    const quality = String(
+      formData.get("quality") || ""
+    );
 
-    const resolution =
-      typeof resolutionValue === "string"
-        ? resolutionValue
-        : "";
-
-    const quality =
-      typeof qualityValue === "string"
-        ? qualityValue
-        : "";
-
-    // ==========================================
-    // 4. READ OPTIONAL REFERENCE IMAGE
-    // ==========================================
-
-    const referenceImageValue =
+    const referenceImageFile =
       formData.get("referenceImage");
 
-    let referenceImage:
-      | string
-      | undefined;
-
-    if (referenceImageValue instanceof File) {
-      console.log(
-        "Reference image received:",
-        referenceImageValue.name
-      );
-
-      if (referenceImageValue.size === 0) {
-        throw new Error(
-          "The reference image is empty."
-        );
-      }
-
-      if (
-        referenceImageValue.size >
-        MAX_REFERENCE_IMAGE_SIZE
-      ) {
-        throw new Error(
-          "Reference image must be 10 MB or smaller."
-        );
-      }
-
-      if (
-        !ALLOWED_IMAGE_TYPES.includes(
-          referenceImageValue.type
-        )
-      ) {
-        throw new Error(
-          "Reference image must be JPG, PNG, or WEBP."
-        );
-      }
-
-      referenceImage =
-        await fileToDataUrl(
-          referenceImageValue
-        );
-
-      console.log(
-        "Reference image converted successfully."
-      );
-    } else if (
-      typeof referenceImageValue === "string" &&
-      referenceImageValue.trim()
-    ) {
-      console.warn(
-        "Reference image was received as a string. Ignoring it because video references must be uploaded as files."
-      );
-    }
-
-    // ==========================================
-    // 5. GET CURRENT CREDITS
-    // ==========================================
-
-    const { credits } =
-      await getUserCredits(user.id);
-
-    originalCredits = credits;
-
-    console.log(
-      "Current credits:",
-      credits
-    );
-
-    console.log(
-      "Required credits:",
-      videoGenerationCost
-    );
-
-    // ==========================================
-    // 6. CHECK CREDITS
-    // ==========================================
-
-    if (credits < videoGenerationCost) {
+    if (!prompt.trim()) {
       return NextResponse.json(
         {
           success: false,
-          message: `You need ${videoGenerationCost} credits to generate a video. You currently have ${credits}.`,
-          creditsRemaining: credits,
-          creditsRequired: videoGenerationCost,
+          error: "Video prompt is required.",
         },
-        {
-          status: 403,
-        }
+        { status: 400 }
       );
     }
 
-    console.log(
-      "Credit check passed."
-    );
+    // ---------------------------------------------------------
+    // 6. PROCESS REFERENCE IMAGE
+    // ---------------------------------------------------------
+    let referenceImage: string | undefined;
 
-    // ==========================================
-    // 7. GENERATE VIDEO
-    // ==========================================
+    if (referenceImageFile instanceof File) {
+      const imageBytes =
+        await referenceImageFile.arrayBuffer();
 
+      const base64 =
+        Buffer.from(imageBytes).toString("base64");
+
+      const contentType =
+        referenceImageFile.type || "image/jpeg";
+
+      referenceImage =
+        `data:${contentType};base64,${base64}`;
+    }
+
+    // ---------------------------------------------------------
+    // 7. GENERATE VIDEO WITH REPLICATE
+    // ---------------------------------------------------------
     const provider =
       new ReplicateVideoProvider();
 
     console.log(
-      "Starting video generation..."
+      "[SONET VIDEO] Starting Seedance 2.0 Mini generation..."
     );
 
     const result =
@@ -273,161 +173,263 @@ export async function POST(req: NextRequest) {
         referenceImage,
       });
 
-    console.log(
-      "Replicate result:",
-      result
-    );
-
-    // ==========================================
-    // 8. CHECK GENERATION RESULT
-    // ==========================================
-
-    if (!result.success) {
+    if (!result.success || !result.videoUrl) {
       return NextResponse.json(
         {
           success: false,
-          message:
+          error:
             result.message ||
+            result.error ||
             "Video generation failed.",
+          status: result.status,
         },
+        { status: 500 }
+      );
+    }
+
+    const replicateVideoUrl =
+      result.videoUrl;
+
+    console.log(
+      "[SONET VIDEO] Replicate video generated successfully."
+    );
+
+    // ---------------------------------------------------------
+    // 8. DOWNLOAD VIDEO FROM REPLICATE
+    // ---------------------------------------------------------
+    console.log(
+      "[SONET VIDEO] Downloading video from Replicate..."
+    );
+
+    const videoResponse =
+      await fetch(replicateVideoUrl);
+
+    if (!videoResponse.ok) {
+      throw new Error(
+        `Unable to download video from Replicate. Status: ${videoResponse.status}`
+      );
+    }
+
+    const videoBuffer =
+      await videoResponse.arrayBuffer();
+
+    const contentType =
+      videoResponse.headers.get(
+        "content-type"
+      ) || "video/mp4";
+
+    // ---------------------------------------------------------
+    // 9. CREATE PERMANENT STORAGE PATH
+    // ---------------------------------------------------------
+    const fileName =
+      `${user.id}/${Date.now()}-${crypto.randomUUID()}.mp4`;
+
+    uploadedStoragePath = fileName;
+
+    console.log(
+      "[SONET VIDEO] Uploading to generated-videos:",
+      fileName
+    );
+
+    // ---------------------------------------------------------
+    // 10. UPLOAD TO SUPABASE STORAGE
+    // ---------------------------------------------------------
+    const {
+      error: uploadError,
+    } = await supabase.storage
+      .from("generated-videos")
+      .upload(
+        fileName,
+        videoBuffer,
         {
-          status: 500,
+          contentType,
+          upsert: false,
         }
+      );
+
+    if (uploadError) {
+      throw new Error(
+        `Failed to permanently store video: ${uploadError.message}`
       );
     }
 
     console.log(
-      "Video generated successfully."
+      "[SONET VIDEO] Video permanently stored in Supabase."
     );
 
-    // ==========================================
-    // 9. DEDUCT CREDITS
-    // ==========================================
+    // ---------------------------------------------------------
+    // 11. GET PERMANENT PUBLIC URL
+    // ---------------------------------------------------------
+    const {
+      data: publicUrlData,
+    } = supabase.storage
+      .from("generated-videos")
+      .getPublicUrl(fileName);
 
+    const permanentVideoUrl =
+      publicUrlData?.publicUrl;
+
+    if (!permanentVideoUrl) {
+      throw new Error(
+        "Video was uploaded but a permanent storage URL could not be created."
+      );
+    }
+
+    console.log(
+      "[SONET VIDEO] Permanent Supabase URL created."
+    );
+
+    // ---------------------------------------------------------
+    // 12. DEDUCT CREDITS
+    // ---------------------------------------------------------
     const creditsRemaining =
       await deductCredits(
         user.id,
         videoGenerationCost
       );
 
-    console.log(
-      `Credits deducted: ${videoGenerationCost}`
-    );
+    creditsDeducted = true;
 
     console.log(
-      `Credits remaining: ${creditsRemaining}`
+      `[SONET VIDEO] ${videoGenerationCost} credits deducted.`
     );
 
-    // ==========================================
-    // 10. SAVE VIDEO TO DATABASE
-    // ==========================================
-
+    // ---------------------------------------------------------
+    // 13. SAVE VIDEO TO EXISTING DATABASE SCHEMA
+    //
+    // IMPORTANT:
+    // We only use columns already known to exist in the
+    // existing SONET video_generations table.
+    // ---------------------------------------------------------
     const {
-      error: videoError,
-    } = await supabaseAdmin
+      data: generation,
+      error: dbError,
+    } = await supabase
       .from("video_generations")
       .insert({
         user_id: user.id,
         prompt,
-        style,
-        camera,
-        duration,
-        aspect_ratio: aspectRatio,
-        resolution,
-        quality,
-        status: result.status,
-        video_url:
-          result.videoUrl ?? null,
-        credits_used:
-          videoGenerationCost,
-      });
+        video_url: permanentVideoUrl,
+        credits_used: videoGenerationCost,
+      })
+      .select()
+      .single();
 
-    if (videoError) {
-      console.error(
-        "Video database error:",
-        videoError
-      );
-
+    if (dbError) {
       throw new Error(
-        "Video generated but could not be saved."
+        `Video was stored but the database record could not be saved: ${dbError.message}`
       );
     }
 
     console.log(
-      "Video saved to database."
+      "[SONET VIDEO] Video database record saved successfully."
     );
 
-    // ==========================================
-    // 11. SUCCESS
-    // ==========================================
-
-    console.log("========================================");
-    console.log("GENERATE VIDEO API SUCCESS");
-    console.log("========================================");
-
+    // ---------------------------------------------------------
+    // 14. SUCCESS
+    // ---------------------------------------------------------
     return NextResponse.json({
       success: true,
-      provider: result.provider,
-      status: result.status,
-      jobId: result.jobId,
-      videoUrl: result.videoUrl,
-      message:
-        result.message ||
-        "Video generated successfully.",
-      creditsUsed:
-        videoGenerationCost,
+      video: generation,
+      videoUrl: permanentVideoUrl,
+      storagePath: uploadedStoragePath,
+      status: "completed",
+      creditsUsed: videoGenerationCost,
       creditsRemaining,
+      message:
+        "Video generated and permanently stored successfully.",
     });
   } catch (error) {
     console.error(
-      "Generate Video Error:",
+      "[SONET VIDEO] Generation error:",
       error
     );
 
-    // ==========================================
-    // ROLLBACK CREDITS
-    // ==========================================
+    // ---------------------------------------------------------
+    // 15. CLEAN UP SUPABASE STORAGE IF DATABASE SAVE FAILED
+    // ---------------------------------------------------------
+    if (uploadedStoragePath) {
+      try {
+        const supabase =
+          await createClient();
 
-    if (
-      userId &&
-      originalCredits !== null
-    ) {
-      console.log(
-        "Rolling back credits..."
-      );
+        await supabase.storage
+          .from("generated-videos")
+          .remove([
+            uploadedStoragePath,
+          ]);
 
-      const {
-        error: rollbackError,
-      } = await supabaseAdmin
-        .from("profiles")
-        .update({
-          credits: originalCredits,
-        })
-        .eq("id", userId);
-
-      if (rollbackError) {
-        console.error(
-          "Credit rollback error:",
-          rollbackError
-        );
-      } else {
         console.log(
-          "Credits successfully rolled back."
+          "[SONET VIDEO] Storage cleanup completed."
+        );
+      } catch (cleanupError) {
+        console.error(
+          "[SONET VIDEO] Storage cleanup failed:",
+          cleanupError
         );
       }
     }
 
+    // ---------------------------------------------------------
+    // 16. ROLLBACK CREDITS
+    // ---------------------------------------------------------
+    if (creditsDeducted) {
+      try {
+        const supabase =
+          await createClient();
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          const {
+            data: profile,
+            error: profileError,
+          } = await supabase
+            .from("profiles")
+            .select("credits")
+            .eq("id", user.id)
+            .single();
+
+          if (!profileError && profile) {
+            const currentCredits =
+              Number(profile.credits);
+
+            await supabase
+              .from("profiles")
+              .update({
+                credits:
+                  currentCredits +
+                  videoGenerationCost,
+              })
+              .eq("id", user.id);
+
+            console.log(
+              `[SONET VIDEO] ${videoGenerationCost} credits rolled back.`
+            );
+          }
+        }
+      } catch (rollbackError) {
+        console.error(
+          "[SONET VIDEO] Credit rollback failed:",
+          rollbackError
+        );
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 17. ERROR RESPONSE
+    // ---------------------------------------------------------
     return NextResponse.json(
       {
         success: false,
-        message:
+        error:
           error instanceof Error
             ? error.message
-            : "Internal Server Error",
+            : "Video generation failed.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

@@ -5,10 +5,10 @@ import { useState } from "react";
 type Video = {
   id: string;
   prompt: string;
-  style: string;
-  duration: string;
-  resolution: string;
-  status: string;
+  style?: string | null;
+  duration?: string | null;
+  resolution?: string | null;
+  status?: string | null;
   created_at: string;
   video_url?: string | null;
 };
@@ -43,14 +43,35 @@ export default function RecentVideos({
       const response = await fetch(
         `/api/download-video?url=${encodeURIComponent(
           video.video_url
-        )}`
+        )}`,
+        {
+          cache: "no-store",
+        }
       );
 
       if (!response.ok) {
-        throw new Error("Download failed.");
+        let message = "Download failed.";
+
+        try {
+          const data = await response.json();
+
+          if (data?.error) {
+            message = data.error;
+          }
+        } catch {
+          // Ignore JSON parsing error.
+        }
+
+        throw new Error(message);
       }
 
       const blob = await response.blob();
+
+      if (!blob.size) {
+        throw new Error(
+          "The downloaded video is empty."
+        );
+      }
 
       const downloadUrl =
         window.URL.createObjectURL(blob);
@@ -59,13 +80,21 @@ export default function RecentVideos({
         document.createElement("a");
 
       link.href = downloadUrl;
-      link.download = `sonet-ai-video-${video.id}.mp4`;
+
+      link.download =
+        `sonet-ai-video-${video.id}.mp4`;
 
       document.body.appendChild(link);
+
       link.click();
+
       document.body.removeChild(link);
 
-      window.URL.revokeObjectURL(downloadUrl);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(
+          downloadUrl
+        );
+      }, 1000);
     } catch (error) {
       console.error(
         "Video download error:",
@@ -83,9 +112,10 @@ export default function RecentVideos({
   }
 
   async function handleDelete(video: Video) {
-    const confirmed = window.confirm(
-      "Delete this video permanently?"
-    );
+    const confirmed =
+      window.confirm(
+        "Delete this video permanently?"
+      );
 
     if (!confirmed) return;
 
@@ -97,7 +127,8 @@ export default function RecentVideos({
         {
           method: "DELETE",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             id: video.id,
@@ -105,9 +136,13 @@ export default function RecentVideos({
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (!response.ok || !data.success) {
+      if (
+        !response.ok ||
+        !data.success
+      ) {
         throw new Error(
           data.error ||
             "Unable to delete video."
@@ -142,7 +177,8 @@ export default function RecentVideos({
           </h2>
 
           <p className="mt-2 text-slate-400">
-            Every video you generate will appear here.
+            Every video you generate will
+            appear here.
           </p>
         </div>
 
@@ -165,7 +201,8 @@ export default function RecentVideos({
           </h3>
 
           <p className="mt-4 text-slate-400">
-            Generate your first AI video and it will appear here.
+            Generate your first AI video
+            and it will appear here.
           </p>
 
         </div>
@@ -174,202 +211,221 @@ export default function RecentVideos({
 
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
 
-          {videos.map((video) => (
+          {videos.map((video) => {
 
-            <div
-              key={video.id}
-              className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-500 hover:shadow-2xl"
-            >
+            const hasVideo =
+              typeof video.video_url ===
+                "string" &&
+              video.video_url.trim()
+                .length > 0;
 
-              {/* Video Preview Area */}
+            return (
+              <div
+                key={video.id}
+                className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-500 hover:shadow-2xl"
+              >
 
-              <div className="relative aspect-video overflow-hidden bg-black">
+                {/* VIDEO PREVIEW */}
 
-                {video.video_url &&
-                video.status === "completed" ? (
+                <div className="relative aspect-video overflow-hidden bg-black">
 
-                  <video
-                    src={video.video_url}
-                    className="h-full w-full object-cover"
-                    muted
-                    playsInline
-                    preload="metadata"
-                  />
+                  {hasVideo ? (
 
-                ) : (
+                    <video
+                      src={
+                        video.video_url!
+                      }
+                      className="h-full w-full object-cover"
+                      muted
+                      playsInline
+                      preload="metadata"
+                      controls
+                    />
 
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-cyan-600 via-blue-700 to-slate-900">
+                  ) : (
 
-                    <div className="text-7xl opacity-30">
-                      🎬
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-cyan-600 via-blue-700 to-slate-900">
+
+                      <div className="text-7xl opacity-30">
+                        🎬
+                      </div>
+
                     </div>
+
+                  )}
+
+                  <div className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-sm font-bold">
+                    {video.duration ||
+                      "AI Video"}
+                  </div>
+
+                  <div className="absolute bottom-4 right-4 rounded-full bg-cyan-500 px-3 py-1 text-sm font-bold text-black">
+                    {video.resolution ||
+                      "720p"}
+                  </div>
+
+                </div>
+
+                {/* CONTENT */}
+
+                <div className="space-y-5 p-6">
+
+                  <h3 className="line-clamp-2 text-lg font-bold">
+                    {video.prompt}
+                  </h3>
+
+                  <div className="flex items-center justify-between gap-3">
+
+                    <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-300">
+                      🎨{" "}
+                      {video.style ||
+                        "Seedance 2.0 Mini"}
+                    </span>
+
+                    <span className="rounded-full bg-green-500/20 px-3 py-1 text-xs font-bold text-green-300">
+                      {hasVideo
+                        ? "🟢 Completed"
+                        : "🟡 Processing"}
+                    </span>
 
                   </div>
 
-                )}
+                  <p className="text-xs text-slate-500">
+                    {new Date(
+                      video.created_at
+                    ).toLocaleString()}
+                  </p>
 
-                <div className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-sm font-bold">
-                  {video.duration}
-                </div>
+                  {/* ACTIONS */}
 
-                <div className="absolute bottom-4 right-4 rounded-full bg-cyan-500 px-3 py-1 text-sm font-bold text-black">
-                  {video.resolution}
-                </div>
+                  <div className="grid grid-cols-3 gap-3">
 
-              </div>
+                    <button
+                      type="button"
+                      disabled={!hasVideo}
+                      onClick={() =>
+                        setPreviewVideo(
+                          video
+                        )
+                      }
+                      className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ▶ Preview
+                    </button>
 
-              <div className="space-y-5 p-6">
+                    <button
+                      type="button"
+                      disabled={
+                        !hasVideo ||
+                        downloadingId ===
+                          video.id
+                      }
+                      onClick={() =>
+                        handleDownload(
+                          video
+                        )
+                      }
+                      className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-green-500 hover:bg-green-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {downloadingId ===
+                      video.id
+                        ? "⏳"
+                        : "⬇ Download"}
+                    </button>
 
-                <h3 className="line-clamp-2 text-lg font-bold">
-                  {video.prompt}
-                </h3>
+                    <button
+                      type="button"
+                      disabled={
+                        deletingId ===
+                        video.id
+                      }
+                      onClick={() =>
+                        handleDelete(
+                          video
+                        )
+                      }
+                      className="rounded-xl border border-red-600 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {deletingId ===
+                      video.id
+                        ? "⏳"
+                        : "🗑 Delete"}
+                    </button>
 
-                <div className="flex items-center justify-between gap-3">
-
-                  <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-300">
-                    🎨 {video.style}
-                  </span>
-
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold ${
-                      video.status === "completed"
-                        ? "bg-green-500/20 text-green-300"
-                        : video.status === "processing"
-                        ? "bg-yellow-500/20 text-yellow-300"
-                        : "bg-red-500/20 text-red-300"
-                    }`}
-                  >
-                    {video.status === "completed"
-                      ? "🟢 Completed"
-                      : video.status === "processing"
-                      ? "🟡 Processing"
-                      : "🔴 Failed"}
-                  </span>
-
-                </div>
-
-                <p className="text-xs text-slate-500">
-                  {new Date(
-                    video.created_at
-                  ).toLocaleString()}
-                </p>
-
-                <div className="grid grid-cols-3 gap-3">
-
-                  <button
-                    type="button"
-                    disabled={
-                      !video.video_url ||
-                      video.status !== "completed"
-                    }
-                    onClick={() =>
-                      setPreviewVideo(video)
-                    }
-                    className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ▶ Preview
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={
-                      !video.video_url ||
-                      video.status !== "completed" ||
-                      downloadingId === video.id
-                    }
-                    onClick={() =>
-                      handleDownload(video)
-                    }
-                    className="rounded-xl border border-slate-700 py-3 text-sm font-semibold transition hover:border-green-500 hover:bg-green-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {downloadingId === video.id
-                      ? "⏳"
-                      : "⬇ Download"}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={
-                      deletingId === video.id
-                    }
-                    onClick={() =>
-                      handleDelete(video)
-                    }
-                    className="rounded-xl border border-red-600 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {deletingId === video.id
-                      ? "⏳"
-                      : "🗑 Delete"}
-                  </button>
+                  </div>
 
                 </div>
 
               </div>
-
-            </div>
-
-          ))}
+            );
+          })}
 
         </div>
 
       )}
 
-      {/* Preview Modal */}
+      {/* PREVIEW MODAL */}
 
-      {previewVideo &&
-        previewVideo.video_url && (
+      {previewVideo?.video_url && (
+
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+          onClick={() =>
+            setPreviewVideo(null)
+          }
+        >
 
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
-            onClick={() =>
-              setPreviewVideo(null)
+            className="relative w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+            onClick={(event) =>
+              event.stopPropagation()
             }
           >
 
-            <div
-              className="relative w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
-              onClick={(event) =>
-                event.stopPropagation()
+            <button
+              type="button"
+              onClick={() =>
+                setPreviewVideo(null)
               }
+              className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-4 py-2 text-xl hover:bg-red-600"
             >
+              ✕
+            </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setPreviewVideo(null)
-                }
-                className="absolute right-4 top-4 z-10 rounded-full bg-black/70 px-4 py-2 text-xl hover:bg-red-600"
-              >
-                ✕
-              </button>
+            <video
+              src={
+                previewVideo.video_url
+              }
+              controls
+              autoPlay
+              playsInline
+              className="max-h-[80vh] w-full bg-black"
+            />
 
-              <video
-                src={previewVideo.video_url}
-                controls
-                autoPlay
-                playsInline
-                className="max-h-[80vh] w-full bg-black"
-              />
+            <div className="p-5">
 
-              <div className="p-5">
+              <h3 className="text-xl font-bold">
+                {previewVideo.prompt}
+              </h3>
 
-                <h3 className="text-xl font-bold">
-                  {previewVideo.prompt}
-                </h3>
-
-                <p className="mt-2 text-sm text-slate-400">
-                  {previewVideo.style} ·{" "}
-                  {previewVideo.duration} ·{" "}
-                  {previewVideo.resolution}
-                </p>
-
-              </div>
+              <p className="mt-2 text-sm text-slate-400">
+                {previewVideo.style ||
+                  "Seedance 2.0 Mini"}{" "}
+                ·{" "}
+                {previewVideo.duration ||
+                  "AI Video"}{" "}
+                ·{" "}
+                {previewVideo.resolution ||
+                  "720p"}
+              </p>
 
             </div>
 
           </div>
 
-        )}
+        </div>
+
+      )}
 
     </section>
   );
