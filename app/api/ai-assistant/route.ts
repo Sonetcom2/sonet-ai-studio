@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { generateAIText } from "@/services/aiService";
+import { generateImage } from "@/services/imageService";
 import { getSettings } from "@/services/settingsService";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MAX_HISTORY_MESSAGES = 30;
 
 const ALLOWED_FILE_TYPES = [
   "image/png",
@@ -21,6 +21,12 @@ const ALLOWED_FILE_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+];
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
 ];
 
 function getSafeAssistantError(error: unknown): string {
@@ -56,37 +62,66 @@ function getSafeAssistantError(error: unknown): string {
     message.includes("database") ||
     message.includes("internal server")
   ) {
-    return "SONET AI is temporarily unavailable. Please try again later.";
+    return "SONET AI was unable to complete your request. Please try again.";
   }
 
   return "SONET AI was unable to complete your request. Please try again.";
 }
 
-function createConversationTitle(message: string) {
-  const cleaned = message
-    .replace(/\s+/g, " ")
-    .trim();
+function isImageGenerationRequest(message: string, hasImageFile: boolean) {
+  const text = message.toLowerCase();
 
-  if (!cleaned) {
-    return "New Chat";
+  // Do not turn a request for a prompt into an actual image.
+  if (
+    /\b(write|give|create|make|generate)\b.*\b(prompt|prompting)\b/i.test(
+      message
+    ) &&
+    !/\b(generate|create|make|produce|draw|render)\b.*\b(image|picture|photo|poster|flyer|logo|portrait|illustration|graphic|visual)\b/i.test(
+      message
+    )
+  ) {
+    return false;
   }
 
-  return cleaned.length > 45
-    ? `${cleaned.slice(0, 45)}...`
-    : cleaned;
+  const explicitImageRequest =
+    /\b(generate|create|make|produce|design|draw|render|visualize)\b[\s\S]{0,80}\b(image|picture|photo|poster|flyer|logo|portrait|illustration|graphic|visual)\b/i.test(
+      message
+    ) ||
+    /\b(image|picture|photo|poster|flyer|logo|portrait|illustration|graphic|visual)\b[\s\S]{0,80}\b(generate|create|make|produce|design|draw|render)\b/i.test(
+      message
+    );
+
+  const imageEditRequest =
+    hasImageFile &&
+    /\b(edit|change|replace|remove|retouch|enhance|transform|modify|background|crop|recolour|color)\b/i.test(
+      message
+    );
+
+  return explicitImageRequest || imageEditRequest;
+}
+
+function buildImagePrompt(message: string) {
+  return `
+Create the requested image.
+
+User request:
+${message}
+
+Follow the user's requested subject, composition, environment, mood, clothing, lighting, camera perspective, colours and visual style where specified.
+
+Produce a polished, professional image suitable for the user's stated purpose.
+
+Do not add watermarks, extra branding, captions or text unless the user explicitly requests them.
+  `.trim();
 }
 
 export async function POST(req: Request) {
   let userId: string | null = null;
   let originalCredits: number | null = null;
   let creditsDeducted = false;
-  let assistantCost = 0;
+  let deductedAmount = 0;
 
   try {
-    // ==========================================
-    // 1. AUTHENTICATE
-    // ==========================================
-
     const supabase = await createClient();
 
     const {
@@ -97,8 +132,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            "Please log in to use SONET AI Assistant.",
+          error: "Please log in to use SONET AI Assistant.",
         },
         { status: 401 }
       );
@@ -106,55 +140,29 @@ export async function POST(req: Request) {
 
     userId = user.id;
 
-    // ==========================================
-    // 2. READ FORM DATA
-    // ==========================================
-
     const formData = await req.formData();
 
-    const message = String(
-      formData.get("message") ?? ""
-    ).trim();
-
-    const conversationIdValue = String(
-      formData.get("conversationId") ?? ""
-    ).trim();
-
+    const message = String(formData.get("message") ?? "").trim();
     const fileValue = formData.get("file");
 
     const file =
-      fileValue instanceof File &&
-      fileValue.size > 0
+      fileValue instanceof File && fileValue.size > 0
         ? fileValue
         : null;
 
-    // ==========================================
-    // 3. VALIDATE MESSAGE
-    // ==========================================
-
     if (!message) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Message is required.",
-        },
+        { success: false, error: "Message is required." },
         { status: 400 }
       );
     }
 
     if (message.length > 10000) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Message is too long.",
-        },
+        { success: false, error: "Message is too long." },
         { status: 400 }
       );
     }
-
-    // ==========================================
-    // 4. VALIDATE FILE
-    // ==========================================
 
     if (file) {
       if (!ALLOWED_FILE_TYPES.includes(file.type)) {
@@ -171,185 +179,225 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             success: false,
-            error:
-              "File is too large. Maximum size is 10 MB.",
+            error: "File is too large. Maximum size is 10 MB.",
           },
           { status: 400 }
         );
       }
     }
 
-    // ==========================================
-    // 5. GET SETTINGS
-    // ==========================================
-
     const settings = await getSettings();
 
-    assistantCost = Number(
+    const assistantCost = Number(
       settings.assistant_generation_cost ?? 1
+    );
+
+    const imageGenerationCost = Number(
+      settings.image_generation_cost
     );
 
     if (
       !Number.isFinite(assistantCost) ||
-      assistantCost < 0
+      assistantCost < 0 ||
+      !Number.isFinite(imageGenerationCost) ||
+      imageGenerationCost < 0
     ) {
-      console.error(
-        "Invalid Assistant generation cost:",
-        settings.assistant_generation_cost
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "SONET AI Assistant is temporarily unavailable. Please try again later.",
-        },
-        { status: 500 }
-      );
+      throw new Error("Invalid generation cost configured.");
     }
 
-    // ==========================================
-    // 6. GET USER CREDITS
-    // ==========================================
-
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("credits, plan")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profile) {
-      console.error(
-        "Assistant profile error:",
-        profileError
-      );
+      console.error("Assistant profile error:", profileError);
 
       return NextResponse.json(
         {
           success: false,
-          error:
-            "Unable to load your SONET AI account. Please try again.",
+          error: "Unable to load your SONET AI account. Please try again.",
         },
         { status: 404 }
       );
     }
 
-    const currentCredits = Number(
-      profile.credits ?? 0
-    );
-
+    const currentCredits = Number(profile.credits ?? 0);
     originalCredits = currentCredits;
 
-    // ==========================================
-    // 7. LOAD / CREATE CONVERSATION
-    // ==========================================
+    const imageRequest = isImageGenerationRequest(
+      message,
+      file?.type.startsWith("image/") ?? false
+    );
 
-    let conversationId =
-      conversationIdValue || null;
+    // ==========================================================
+    // IMAGE MODE
+    // ==========================================================
 
-    if (conversationId) {
-      const {
-        data: conversation,
-        error: conversationError,
-      } = await supabaseAdmin
-        .from("ai_conversations")
-        .select("id")
-        .eq("id", conversationId)
-        .eq("user_id", user.id)
-        .single();
+    if (imageRequest) {
+      if (imageGenerationCost <= 0) {
+        throw new Error("Invalid image generation cost configured.");
+      }
 
-      if (
-        conversationError ||
-        !conversation
-      ) {
+      if (currentCredits < imageGenerationCost) {
         return NextResponse.json(
           {
             success: false,
-            error: "Conversation not found.",
+            error:
+              "You don't have enough credits to generate an image. Please purchase more credits or upgrade your plan.",
+            creditsRemaining: currentCredits,
+            creditsRequired: imageGenerationCost,
           },
-          { status: 404 }
+          { status: 400 }
         );
       }
-    } else {
-      const { data: newConversation, error } =
-        await supabaseAdmin
-          .from("ai_conversations")
-          .insert({
-            user_id: user.id,
-            title: createConversationTitle(
-              message
-            ),
-          })
-          .select("id")
-          .single();
 
-      if (error || !newConversation) {
-        console.error(
-          "Create AI Conversation Error:",
-          error
-        );
+      let referenceImageDataUrl: string | null = null;
+
+      if (file) {
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "To edit an image in SONET AI Assistant, please upload a PNG, JPG, JPEG or WEBP image.",
+            },
+            { status: 400 }
+          );
+        }
+
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        referenceImageDataUrl = `data:${file.type};base64,${buffer.toString(
+          "base64"
+        )}`;
+      }
+
+      const newCredits = currentCredits - imageGenerationCost;
+
+      const { error: deductError } = await supabaseAdmin
+        .from("profiles")
+        .update({ credits: newCredits })
+        .eq("id", user.id);
+
+      if (deductError) {
+        console.error("Assistant image credit deduction error:", deductError);
 
         return NextResponse.json(
           {
             success: false,
             error:
-              "Unable to create your conversation.",
+              "We couldn't process your SONET AI credits. Please try again.",
           },
           { status: 500 }
         );
       }
 
-      conversationId = newConversation.id;
-    }
+      creditsDeducted = true;
+      deductedAmount = imageGenerationCost;
 
-    // ==========================================
-    // 8. LOAD PREVIOUS MESSAGES
-    // ==========================================
+      const generatedImage = await generateImage({
+        prompt: buildImagePrompt(message),
+        model: "gpt-image-1",
+        quality: "high",
+        style: "auto",
+        aspectRatio: "1:1",
+        referenceImage: referenceImageDataUrl,
+      });
 
-    const {
-      data: previousMessages,
-      error: historyError,
-    } = await supabaseAdmin
-      .from("ai_messages")
-      .select("role, content")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(MAX_HISTORY_MESSAGES);
+      if (!generatedImage?.startsWith("data:image/")) {
+        throw new Error("Image generation returned an invalid image.");
+      }
 
-    if (historyError) {
-      console.error(
-        "AI Conversation History Error:",
-        historyError
+      const matches = generatedImage.match(
+        /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/
       );
 
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Unable to load conversation history.",
-        },
-        { status: 500 }
-      );
+      if (!matches) {
+        throw new Error("Invalid generated image data.");
+      }
+
+      const imageBuffer = Buffer.from(matches[1], "base64");
+
+      const filePath = `${user.id}/${Date.now()}-${crypto.randomUUID()}.png`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("generated-images")
+        .upload(filePath, imageBuffer, {
+          contentType: "image/png",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Assistant image storage error:", uploadError);
+        throw new Error("Unable to save generated image.");
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabaseAdmin.storage
+        .from("generated-images")
+        .getPublicUrl(filePath);
+
+      if (!publicUrl) {
+        throw new Error("Unable to create image URL.");
+      }
+
+      const { error: imageDbError } = await supabaseAdmin
+        .from("images")
+        .insert({
+          user_id: user.id,
+          prompt: message,
+          image_url: publicUrl,
+        });
+
+      if (imageDbError) {
+        console.error("Assistant image database error:", imageDbError);
+
+        await supabaseAdmin.storage
+          .from("generated-images")
+          .remove([filePath]);
+
+        throw new Error("Unable to save generated image information.");
+      }
+
+      return NextResponse.json({
+        success: true,
+        mode: "image",
+        answer: referenceImageDataUrl
+          ? "I've created the image using your uploaded reference."
+          : "I've created the image for you.",
+        imageUrl: publicUrl,
+        creditsUsed: imageGenerationCost,
+        creditsRemaining: newCredits,
+        fileUsed: Boolean(file),
+      });
     }
 
-    const history =
-      previousMessages
-        ?.reverse()
-        .map((item) => ({
-          role: item.role,
-          content: item.content,
-        })) ?? [];
+    // ==========================================================
+    // TEXT / ASSISTANT MODE
+    // ==========================================================
 
-    // ==========================================
-    // 9. ONLY CHARGE WHEN FILE IS USED
-    // ==========================================
+    let userPrompt = message;
 
+    if (file) {
+      userPrompt += `
+
+The user has uploaded a file named "${file.name}".
+File type: ${file.type}.
+File size: ${file.size} bytes.
+
+The uploaded file should be considered part of the user's request.
+If the file content is not directly readable by the current AI
+processing pipeline, clearly tell the user what information is
+needed instead of pretending to have seen its contents.
+`;
+    }
+
+    // Preserve the existing Assistant billing behaviour:
+    // file analysis is charged; normal text chat remains free.
     if (file && assistantCost > 0) {
       if (currentCredits < assistantCost) {
         return NextResponse.json(
@@ -364,23 +412,15 @@ export async function POST(req: Request) {
         );
       }
 
-      const newCredits =
-        currentCredits - assistantCost;
+      const newCredits = currentCredits - assistantCost;
 
-      const {
-        error: deductError,
-      } = await supabaseAdmin
+      const { error: deductError } = await supabaseAdmin
         .from("profiles")
-        .update({
-          credits: newCredits,
-        })
+        .update({ credits: newCredits })
         .eq("id", user.id);
 
       if (deductError) {
-        console.error(
-          "Assistant credit deduction error:",
-          deductError
-        );
+        console.error("Assistant credit deduction error:", deductError);
 
         return NextResponse.json(
           {
@@ -393,36 +433,8 @@ export async function POST(req: Request) {
       }
 
       creditsDeducted = true;
-
-      console.log(
-        `Assistant file analysis credit deducted: ${assistantCost}`
-      );
+      deductedAmount = assistantCost;
     }
-
-    // ==========================================
-    // 10. BUILD CURRENT REQUEST
-    // ==========================================
-
-    let currentUserPrompt = message;
-
-    if (file) {
-      currentUserPrompt += `
-
-The user has uploaded a file named "${file.name}".
-File type: ${file.type}.
-File size: ${file.size} bytes.
-
-The uploaded file should be considered part of the user's
-request. If the file content is not directly readable by
-the current AI processing pipeline, clearly tell the user
-what information is needed instead of pretending to have
-seen its contents.
-`;
-    }
-
-    // ==========================================
-    // 11. SYSTEM PROMPT
-    // ==========================================
 
     const systemPrompt = `
 You are SONET AI Assistant, the official AI assistant
@@ -451,16 +463,10 @@ You can help users with:
 
 Be professional, friendly, concise, and helpful.
 
-Maintain continuity with the conversation history.
-When the user refers to something discussed earlier,
-use the previous messages to understand what they mean.
+When helping with prompts, make them detailed and production-ready.
 
-When helping with prompts, make them detailed and
-production-ready.
-
-Do not claim that SONET AI STUDIO has a feature unless it
-is reasonably supported by the user's request or available
-context.
+Do not claim that SONET AI STUDIO has a feature unless it is
+reasonably supported by the available context.
 
 If the user asks about something outside your knowledge,
 be honest rather than inventing facts.
@@ -470,134 +476,35 @@ internal implementation details, provider details,
 billing information, or private data.
 `;
 
-    // ==========================================
-    // 12. BUILD AI INPUT WITH HISTORY
-    // ==========================================
-
-    const aiInput = [
-      ...history,
-      {
-        role: "user",
-        content: currentUserPrompt,
-      },
-    ]
-      .map(
-        (item) =>
-          `${item.role === "user" ? "USER" : "SONET AI"}: ${item.content}`
-      )
-      .join("\n\n");
-
-    // ==========================================
-    // 13. GENERATE RESPONSE
-    // ==========================================
-
     const answer = await generateAIText({
       systemPrompt,
-      userPrompt: currentUserPrompt,
-      input: aiInput,
+      userPrompt,
       model: "gpt-5-mini",
       maxOutputTokens: 2000,
     });
 
-    // ==========================================
-    // 14. SAVE USER MESSAGE
-    // ==========================================
-
-    const { error: userMessageError } =
-      await supabaseAdmin
-        .from("ai_messages")
-        .insert({
-          conversation_id: conversationId,
-          user_id: user.id,
-          role: "user",
-          content: userContentForHistory(
-            message,
-            file
-          ),
-        });
-
-    if (userMessageError) {
-      console.error(
-        "Save AI User Message Error:",
-        userMessageError
-      );
-    }
-
-    // ==========================================
-    // 15. SAVE ASSISTANT MESSAGE
-    // ==========================================
-
-    const { error: assistantMessageError } =
-      await supabaseAdmin
-        .from("ai_messages")
-        .insert({
-          conversation_id: conversationId,
-          user_id: user.id,
-          role: "assistant",
-          content: answer,
-        });
-
-    if (assistantMessageError) {
-      console.error(
-        "Save AI Assistant Message Error:",
-        assistantMessageError
-      );
-    }
-
-    // ==========================================
-    // 16. UPDATE CONVERSATION
-    // ==========================================
-
-    await supabaseAdmin
-      .from("ai_conversations")
-      .update({
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", conversationId)
-      .eq("user_id", user.id);
-
-    // ==========================================
-    // 17. SUCCESS
-    // ==========================================
-
     const creditsRemaining =
-      creditsDeducted &&
-      originalCredits !== null
-        ? originalCredits - assistantCost
+      creditsDeducted && originalCredits !== null
+        ? originalCredits - deductedAmount
         : originalCredits;
 
     return NextResponse.json({
       success: true,
+      mode: "text",
       answer,
-      conversationId,
       fileUsed: Boolean(file),
-      creditsUsed: creditsDeducted
-        ? assistantCost
-        : 0,
+      creditsUsed: creditsDeducted ? deductedAmount : 0,
       creditsRemaining,
     });
   } catch (error) {
-    console.error(
-      "SONET AI Assistant Error:",
-      error
-    );
-
-    // ==========================================
-    // ROLLBACK CREDIT
-    // ==========================================
+    console.error("SONET AI Assistant Error:", error);
 
     if (
       creditsDeducted &&
       userId &&
       originalCredits !== null
     ) {
-      console.log(
-        "Rolling back Assistant credits..."
-      );
-
-      const {
-        error: rollbackError,
-      } = await supabaseAdmin
+      const { error: rollbackError } = await supabaseAdmin
         .from("profiles")
         .update({
           credits: originalCredits,
@@ -608,10 +515,6 @@ billing information, or private data.
         console.error(
           "Assistant credit rollback error:",
           rollbackError
-        );
-      } else {
-        console.log(
-          "Assistant credits successfully rolled back."
         );
       }
     }
@@ -625,15 +528,4 @@ billing information, or private data.
       { status: 500 }
     );
   }
-}
-
-function userContentForHistory(
-  message: string,
-  file: File | null
-) {
-  if (!file) {
-    return message;
-  }
-
-  return `${message}\n\n📎 ${file.name}`;
 }

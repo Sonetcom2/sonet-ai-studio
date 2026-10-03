@@ -18,6 +18,10 @@ export default function LibraryCard({
   onDownload,
   onDelete,
 }: LibraryCardProps) {
+  const previewUrl = `/api/image-preview?url=${encodeURIComponent(
+    imageUrl
+  )}`;
+
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-purple-500 hover:shadow-purple-500/20">
       <button
@@ -26,7 +30,7 @@ export default function LibraryCard({
         className="block w-full"
       >
         <img
-          src={imageUrl}
+          src={previewUrl}
           alt={prompt || "SONET AI generated image"}
           className="h-64 w-full object-cover transition duration-300 hover:scale-[1.02]"
         />
