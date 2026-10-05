@@ -1,15 +1,41 @@
-
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { markReferralConverted } from "@/services/referralService";
+import {
+  getAffiliateUpline,
+  markReferralConverted,
+} from "@/services/referralService";
 
 /**
- * Create a commission for a successful referred payment.
+ * Affiliate commission rates.
  *
- * Commission is calculated from the verified payment amount.
+ * Level 1 = direct sponsor
+ * Level 2 = sponsor's sponsor
+ * Level 3 = third-level sponsor
+ *
+ * Matching bonus is intentionally NOT included.
+ */
+const COMMISSION_RATES = {
+  1: 15,
+  2: 3,
+  3: 1,
+} as const;
+
+/**
+ * Create affiliate commissions for a successful referred payment.
+ *
+ * One payment can create up to three commission records:
+ *
+ * Level 1 → 15%
+ * Level 2 → 3%
+ * Level 3 → 1%
  *
  * Example:
- * PRO ₦5,000 × 20% = ₦1,000
- * PREMIUM ₦25,000 × 20% = ₦5,000
+ *
+ * PRO ₦5,000:
+ * Level 1 = ₦750
+ * Level 2 = ₦150
+ * Level 3 = ₦50
+ *
+ * Maximum total network commission = ₦950.
  */
 export async function createCommission({
   referredUserId,
@@ -37,44 +63,54 @@ export async function createCommission({
   }
 
   // --------------------------------------------------
-  // 1. Prevent duplicate commission
+  // 1. Check whether this payment already has
+  //    affiliate commission records.
   // --------------------------------------------------
 
-  const { data: existingCommission, error: existingError } =
-    await supabaseAdmin
-      .from("commissions")
-      .select("*")
-      .eq("payment_reference", paymentReference)
-      .maybeSingle();
+  const {
+    data: existingCommissions,
+    error: existingError,
+  } = await supabaseAdmin
+    .from("commissions")
+    .select("*")
+    .eq("payment_reference", paymentReference);
 
   if (existingError) {
     console.error(
-      "Check Existing Commission Error:",
+      "Check Existing Commissions Error:",
       existingError
     );
 
     throw new Error(
-      "Unable to check existing commission."
+      "Unable to check existing commissions."
     );
   }
 
-  if (existingCommission) {
+  // If commissions already exist for this payment,
+  // do not create them again.
+  if (
+    existingCommissions &&
+    existingCommissions.length > 0
+  ) {
     return {
       created: false,
-      commission: existingCommission,
+      commissions: existingCommissions,
+      reason: "ALREADY_PROCESSED",
     };
   }
 
   // --------------------------------------------------
-  // 2. Find the referral
+  // 2. Find the direct referral.
   // --------------------------------------------------
 
-  const { data: referral, error: referralError } =
-    await supabaseAdmin
-      .from("referrals")
-      .select("*")
-      .eq("referred_user_id", referredUserId)
-      .maybeSingle();
+  const {
+    data: referral,
+    error: referralError,
+  } = await supabaseAdmin
+    .from("referrals")
+    .select("*")
+    .eq("referred_user_id", referredUserId)
+    .maybeSingle();
 
   if (referralError) {
     console.error(
@@ -91,71 +127,42 @@ export async function createCommission({
   if (!referral) {
     return {
       created: false,
-      commission: null,
+      commissions: [],
       reason: "NO_REFERRAL",
     };
   }
 
   // --------------------------------------------------
-  // 3. Find affiliate profile
+  // 3. Find the affiliate upline.
+  //
+  // Example:
+  //
+  // Customer → David → John → Peter
+  //
+  // Returns:
+  // Level 1 = David
+  // Level 2 = John
+  // Level 3 = Peter
   // --------------------------------------------------
 
-  const { data: affiliate, error: affiliateError } =
-    await supabaseAdmin
-      .from("affiliate_profiles")
-      .select("*")
-      .eq("id", referral.affiliate_id)
-      .maybeSingle();
-
-  if (affiliateError) {
-    console.error(
-      "Find Affiliate For Commission Error:",
-      affiliateError
+  const upline =
+    await getAffiliateUpline(
+      referredUserId
     );
 
-    throw new Error(
-      "Unable to find affiliate profile."
-    );
-  }
-
-  if (!affiliate) {
-    throw new Error(
-      "Affiliate profile not found."
-    );
-  }
-
-  if (affiliate.status !== "active") {
+  if (upline.length === 0) {
     return {
       created: false,
-      commission: null,
-      reason: "AFFILIATE_INACTIVE",
+      commissions: [],
+      reason: "NO_ACTIVE_UPLINE",
     };
   }
 
   // --------------------------------------------------
-  // 4. Calculate commission
-  // --------------------------------------------------
-
-  const commissionRate =
-    Number(affiliate.commission_rate) || 0;
-
-  const commissionAmount =
-    Math.round(
-      paymentAmount *
-        (commissionRate / 100) *
-        100
-    ) / 100;
-
-  if (commissionAmount <= 0) {
-    return {
-      created: false,
-      commission: null,
-      reason: "ZERO_COMMISSION",
-    };
-  }
-
-  // --------------------------------------------------
-  // 5. Mark referral as converted
+  // 4. Mark the customer's direct referral
+  //    as converted.
+  //
+  // This happens once per qualifying payment.
   // --------------------------------------------------
 
   await markReferralConverted(
@@ -163,101 +170,252 @@ export async function createCommission({
   );
 
   // --------------------------------------------------
-  // 6. Create commission record
+  // 5. Create commission records.
   // --------------------------------------------------
 
-  const { data: commission, error: commissionError } =
-    await supabaseAdmin
+  const createdCommissions: any[] = [];
+
+  for (const sponsor of upline) {
+    const commissionRate =
+      COMMISSION_RATES[sponsor.level];
+
+    const commissionAmount =
+      Math.round(
+        paymentAmount *
+          (commissionRate / 100) *
+          100
+      ) / 100;
+
+    if (commissionAmount <= 0) {
+      continue;
+    }
+
+    // ------------------------------------------------
+    // Prevent duplicate commission for this specific
+    // affiliate/payment/level combination.
+    // ------------------------------------------------
+
+    const {
+      data: existingLevelCommission,
+      error: existingLevelError,
+    } = await supabaseAdmin
+      .from("commissions")
+      .select("*")
+      .eq(
+        "payment_reference",
+        paymentReference
+      )
+      .eq(
+        "affiliate_id",
+        sponsor.affiliateId
+      )
+      .maybeSingle();
+
+    if (existingLevelError) {
+      console.error(
+        `Check Existing Level ${sponsor.level} Commission Error:`,
+        existingLevelError
+      );
+
+      throw new Error(
+        "Unable to check existing level commission."
+      );
+    }
+
+    if (existingLevelCommission) {
+      createdCommissions.push(
+        existingLevelCommission
+      );
+
+      continue;
+    }
+
+    // ------------------------------------------------
+    // Create commission record.
+    // ------------------------------------------------
+
+    const {
+      data: commission,
+      error: commissionError,
+    } = await supabaseAdmin
       .from("commissions")
       .insert({
-        affiliate_id: affiliate.id,
-        referral_id: referral.id,
-        referred_user_id: referredUserId,
-        payment_reference: paymentReference,
+        affiliate_id:
+          sponsor.affiliateId,
+
+        referral_id:
+          sponsor.referralId,
+
+        referred_user_id:
+          referredUserId,
+
+        payment_reference:
+          paymentReference,
+
         plan,
-        payment_amount: paymentAmount,
-        commission_rate: commissionRate,
-        commission_amount: commissionAmount,
+
+        payment_amount:
+          paymentAmount,
+
+        commission_rate:
+          commissionRate,
+
+        commission_amount:
+          commissionAmount,
+
         currency,
+
         status: "pending",
       })
       .select("*")
       .single();
 
-  if (commissionError) {
-    // Handle race conditions where another request
-    // created the commission first.
-    if (
-      commissionError.message
-        .toLowerCase()
-        .includes("duplicate")
-    ) {
-      const { data: duplicateCommission } =
-        await supabaseAdmin
+    if (commissionError) {
+      // Handle a race condition where another
+      // request created the same commission first.
+      if (
+        commissionError.message
+          .toLowerCase()
+          .includes("duplicate")
+      ) {
+        const {
+          data: duplicateCommission,
+        } = await supabaseAdmin
           .from("commissions")
           .select("*")
           .eq(
             "payment_reference",
             paymentReference
           )
+          .eq(
+            "affiliate_id",
+            sponsor.affiliateId
+          )
           .maybeSingle();
 
-      return {
-        created: false,
-        commission: duplicateCommission,
-      };
+        if (duplicateCommission) {
+          createdCommissions.push(
+            duplicateCommission
+          );
+
+          continue;
+        }
+      }
+
+      console.error(
+        `Create Level ${sponsor.level} Commission Error:`,
+        commissionError
+      );
+
+      throw new Error(
+        `Unable to create Level ${sponsor.level} commission.`
+      );
     }
 
-    console.error(
-      "Create Commission Error:",
-      commissionError
+    createdCommissions.push(
+      commission
     );
 
-    throw new Error(
-      "Unable to create commission."
-    );
-  }
+    // ------------------------------------------------
+    // 6. Update affiliate earnings.
+    // ------------------------------------------------
 
-  // --------------------------------------------------
-  // 7. Update affiliate earnings
-  // --------------------------------------------------
+    const {
+      data: affiliate,
+      error: affiliateError,
+    } = await supabaseAdmin
+      .from("affiliate_profiles")
+      .select(
+        "total_earned, pending_earnings"
+      )
+      .eq(
+        "id",
+        sponsor.affiliateId
+      )
+      .maybeSingle();
 
-  const currentTotal =
-    Number(affiliate.total_earned) || 0;
+    if (affiliateError) {
+      console.error(
+        `Get Affiliate Earnings Level ${sponsor.level} Error:`,
+        affiliateError
+      );
 
-  const currentPending =
-    Number(affiliate.pending_earnings) || 0;
+      throw new Error(
+        "Commission created, but affiliate earnings could not be loaded."
+      );
+    }
 
-  const { error: earningsError } =
-    await supabaseAdmin
+    if (!affiliate) {
+      throw new Error(
+        "Commission created, but affiliate profile could not be found."
+      );
+    }
+
+    const currentTotal =
+      Number(
+        affiliate.total_earned
+      ) || 0;
+
+    const currentPending =
+      Number(
+        affiliate.pending_earnings
+      ) || 0;
+
+    const {
+      error: earningsError,
+    } = await supabaseAdmin
       .from("affiliate_profiles")
       .update({
         total_earned:
-          currentTotal + commissionAmount,
+          currentTotal +
+          commissionAmount,
 
         pending_earnings:
-          currentPending + commissionAmount,
+          currentPending +
+          commissionAmount,
 
         updated_at:
           new Date().toISOString(),
       })
-      .eq("id", affiliate.id);
+      .eq(
+        "id",
+        sponsor.affiliateId
+      );
 
-  if (earningsError) {
-    console.error(
-      "Update Affiliate Earnings Error:",
-      earningsError
-    );
+    if (earningsError) {
+      console.error(
+        `Update Affiliate Earnings Level ${sponsor.level} Error:`,
+        earningsError
+      );
 
-    // The commission record already exists.
-    // We deliberately do not delete it.
-    throw new Error(
-      "Commission created, but affiliate earnings could not be updated."
-    );
+      throw new Error(
+        "Commission created, but affiliate earnings could not be updated."
+      );
+    }
   }
 
+  // --------------------------------------------------
+  // 7. Return the commission results.
+  // --------------------------------------------------
+
   return {
-    created: true,
-    commission,
+    created:
+      createdCommissions.length > 0,
+
+    commissions:
+      createdCommissions,
+
+    totalCommission:
+      createdCommissions.reduce(
+        (
+          total,
+          commission
+        ) =>
+          total +
+          Number(
+            commission.commission_amount
+          ),
+        0
+      ),
   };
 }

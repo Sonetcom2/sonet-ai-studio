@@ -1,4 +1,3 @@
-
 import { createClient } from "@/lib/supabase/server";
 import { getSubscriptionDetails } from "@/lib/subscription";
 import {
@@ -107,7 +106,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "Paystack returned an invalid payment reference.",
+          error:
+            "Paystack returned an invalid payment reference.",
         },
         { status: 400 }
       );
@@ -172,24 +172,45 @@ export async function POST(request: Request) {
 
     // --------------------------------------------------
     // 8. If payment already exists, make sure its
-    //    affiliate commission also exists.
+    //    affiliate commissions also exist.
     //
     // This makes the commission flow safer if the first
     // request succeeded at payment insertion but failed
-    // while creating the commission.
+    // while creating the commissions.
     // --------------------------------------------------
 
     if (isDuplicatePayment(existingPayment)) {
       try {
-        await createCommission({
-          referredUserId: user.id,
-          paymentReference: payment.reference,
-          plan: subscription.plan,
-          paymentAmount:
-            Number(payment.amount) / 100,
-          currency:
-            payment.currency || "NGN",
-        });
+        const commissionResult =
+          await createCommission({
+            referredUserId: user.id,
+            paymentReference: payment.reference,
+            plan: subscription.plan,
+            paymentAmount:
+              Number(payment.amount) / 100,
+            currency:
+              payment.currency || "NGN",
+          });
+
+        if (commissionResult.created) {
+          console.log(
+            "Affiliate commissions recovered:",
+            commissionResult.commissions.map(
+              (commission) => commission.id
+            )
+          );
+
+          console.log(
+            "Total affiliate commission:",
+            commissionResult.totalCommission
+          );
+        } else {
+          console.log(
+            "No affiliate commissions recovered:",
+            commissionResult.reason ||
+              "NO_REFERRAL"
+          );
+        }
       } catch (commissionError) {
         console.error(
           "Affiliate commission recovery error:",
@@ -260,14 +281,15 @@ export async function POST(request: Request) {
     }
 
     // --------------------------------------------------
-    // 11. Create affiliate commission
+    // 11. Create affiliate commissions
     //
-    // payment.amount is in kobo.
-    // commissionService receives the actual currency
-    // amount in NGN.
+    // New commission structure:
     //
-    // Example:
-    // ₦5,000 × 20% = ₦1,000
+    // Level 1 = 15%
+    // Level 2 = 3%
+    // Level 3 = 1%
+    //
+    // Matching bonus is NOT included.
     // --------------------------------------------------
 
     try {
@@ -284,13 +306,21 @@ export async function POST(request: Request) {
 
       if (commissionResult.created) {
         console.log(
-          "Affiliate commission created:",
-          commissionResult.commission?.id
+          "Affiliate commissions created:",
+          commissionResult.commissions.map(
+            (commission) => commission.id
+          )
+        );
+
+        console.log(
+          "Total affiliate commission:",
+          commissionResult.totalCommission
         );
       } else {
         console.log(
           "No affiliate commission created:",
-          commissionResult.reason || "NO_REFERRAL"
+          commissionResult.reason ||
+            "NO_REFERRAL"
         );
       }
     } catch (commissionError) {

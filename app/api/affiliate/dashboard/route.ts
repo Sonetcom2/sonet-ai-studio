@@ -1,7 +1,9 @@
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAffiliateByUserId } from "@/services/referralService";
+import {
+  getAffiliateByUserId,
+  getAffiliateNetwork,
+} from "@/services/referralService";
 
 export async function GET() {
   try {
@@ -45,7 +47,7 @@ export async function GET() {
     }
 
     // ---------------------------------------------
-    // 3. Get referrals
+    // 3. Get direct referrals
     // ---------------------------------------------
 
     const {
@@ -128,7 +130,16 @@ export async function GET() {
     }
 
     // ---------------------------------------------
-    // 5. Return affiliate dashboard data
+    // 5. Get 3-level referral network
+    // ---------------------------------------------
+
+    const network =
+      await getAffiliateNetwork(
+        affiliate.id
+      );
+
+    // ---------------------------------------------
+    // 6. Return affiliate dashboard data
     // ---------------------------------------------
 
     return NextResponse.json({
@@ -136,34 +147,43 @@ export async function GET() {
 
       affiliate: {
         id: affiliate.id,
+
         referralCode:
           affiliate.referral_code,
+
         commissionRate:
           Number(
             affiliate.commission_rate
           ),
+
         totalReferrals:
           Number(
             affiliate.total_referrals
           ),
+
         successfulReferrals:
           Number(
             affiliate.successful_referrals
           ),
+
         totalEarned:
           Number(
             affiliate.total_earned
           ),
+
         pendingEarnings:
           Number(
             affiliate.pending_earnings
           ),
+
         paidEarnings:
           Number(
             affiliate.paid_earnings
           ),
+
         status:
           affiliate.status,
+
         createdAt:
           affiliate.created_at,
       },
@@ -173,6 +193,8 @@ export async function GET() {
 
       commissions:
         commissions ?? [],
+
+      network,
     });
   } catch (error) {
     console.error(
