@@ -27,6 +27,9 @@ function LoginForm() {
     setLoading(true);
 
     try {
+      /*
+       * Authenticate with Supabase.
+       */
       const { data, error } =
         await supabase.auth.signInWithPassword({
           email: email.trim(),
@@ -38,6 +41,10 @@ function LoginForm() {
         return;
       }
 
+      /*
+       * A successful login must contain both
+       * the authenticated user and session.
+       */
       if (!data.user || !data.session) {
         alert(
           "Unable to create a session. Please try again."
@@ -46,7 +53,73 @@ function LoginForm() {
       }
 
       /*
-       * Affiliate dashboard redirect
+       * ========================================================
+       * LOGIN SUCCESS NOTIFICATION
+       * ========================================================
+       */
+      alert("Login successful!");
+
+      /*
+       * ========================================================
+       * PROCESS REFERRAL CODE SAVED DURING REGISTRATION
+       * ========================================================
+       *
+       * Email confirmation is enabled in Supabase.
+       *
+       * Therefore, during registration there may be no active
+       * session, which means the referral registration endpoint
+       * cannot be called at that time.
+       *
+       * The referral code is nevertheless saved in the user's
+       * Supabase Auth metadata.
+       *
+       * After the user successfully logs in, we now process
+       * that stored referral code.
+       */
+      const referralCode =
+        data.user.user_metadata?.referral_code;
+
+      if (
+        typeof referralCode === "string" &&
+        referralCode.trim()
+      ) {
+        try {
+          const referralResponse = await fetch(
+            "/api/referrals/register",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              credentials: "include",
+              body: JSON.stringify({
+                referralCode:
+                  referralCode.trim().toUpperCase(),
+              }),
+            }
+          );
+
+          const referralResult =
+            await referralResponse.json();
+
+          if (!referralResult.success) {
+            console.warn(
+              "Referral registration was not completed:",
+              referralResult.error
+            );
+          }
+        } catch (referralError) {
+          console.error(
+            "Referral registration request failed:",
+            referralError
+          );
+        }
+      }
+
+      /*
+       * ========================================================
+       * AFFILIATE DASHBOARD REDIRECT
+       * ========================================================
        *
        * When the user came from the affiliate page,
        * send them directly to the affiliate dashboard
