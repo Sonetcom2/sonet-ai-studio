@@ -75,38 +75,113 @@ export default function AIImagePage() {
     setToast("Daily images have been reset.");
   }
 
-  function handleReferenceImage(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  async function handleReferenceImage(
+  event: React.ChangeEvent<HTMLInputElement>
+) {
+  const file = event.target.files?.[0];
+  if (!file) return;
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setToastType("error");
-      setToast("Please upload a PNG, JPG, JPEG, or WEBP image.");
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size === 0) {
-      setToastType("error");
-      setToast("The selected image is empty.");
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size > MAX_REFERENCE_IMAGE_SIZE) {
-      setToastType("error");
-      setToast("Reference image must be smaller than 10 MB.");
-      event.target.value = "";
-      return;
-    }
-
-    if (referencePreview) URL.revokeObjectURL(referencePreview);
-
-    setReferenceImage(file);
-    setReferencePreview(URL.createObjectURL(file));
-    setToastType("success");
-    setToast("Reference photo added.");
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    setToastType("error");
+    setToast("Please upload a PNG, JPG, JPEG, or WEBP image.");
+    event.target.value = "";
+    return;
   }
+
+  if (file.size === 0) {
+    setToastType("error");
+    setToast("The selected image is empty.");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > MAX_REFERENCE_IMAGE_SIZE) {
+    setToastType("error");
+    setToast("Reference image must be smaller than 10 MB.");
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    let processedFile = file;
+
+    // Images larger than 2 MB are automatically optimised
+    if (file.size > 2 * 1024 * 1024) {
+      const imageBitmap = await createImageBitmap(file);
+
+      const MAX_DIMENSION = 2048;
+
+      let width = imageBitmap.width;
+      let height = imageBitmap.height;
+
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const scale = Math.min(
+          MAX_DIMENSION / width,
+          MAX_DIMENSION / height
+        );
+
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        throw new Error("Unable to process the reference image.");
+      }
+
+      context.drawImage(imageBitmap, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/jpeg", 0.82);
+      });
+
+      imageBitmap.close();
+
+      if (!blob) {
+        throw new Error("Unable to optimise the reference image.");
+      }
+
+      processedFile = new File(
+        [blob],
+        file.name.replace(/\.[^/.]+$/, "") + ".jpg",
+        {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        }
+      );
+    }
+
+    if (referencePreview) {
+      URL.revokeObjectURL(referencePreview);
+    }
+
+    setReferenceImage(processedFile);
+    setReferencePreview(URL.createObjectURL(processedFile));
+
+    setToastType("success");
+
+    if (processedFile.size < file.size) {
+      setToast(
+        `Reference photo optimised from ${(file.size / (1024 * 1024)).toFixed(
+          2
+        )} MB to ${(processedFile.size / (1024 * 1024)).toFixed(2)} MB.`
+      );
+    } else {
+      setToast("Reference photo added.");
+    }
+  } catch (error) {
+    console.error("Reference image optimisation error:", error);
+
+    setToastType("error");
+    setToast("Unable to process this reference photo.");
+    event.target.value = "";
+  }
+}
 
   function removeReferenceImage() {
     if (referencePreview) URL.revokeObjectURL(referencePreview);
